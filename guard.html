@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Guard Terminal — Access Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+:root{
+  --bg:#000;--bg-card:#0d1117;--card:#111827;--border:#1e3a5f;
+  --fg:#f1f5f9;--muted:#64748b;--dim:#334155;
+  --blue:#2266FF;--teal:#00E5D1;--green:#4ade80;--red:#f87171;--amber:#fbbf24;
+  --grad:linear-gradient(90deg,#2266FF,#00E5D1);
+  --grad-d:linear-gradient(135deg,#2266FF,#00E5D1);
+}
+body{font-family:'Sarabun',sans-serif;background:var(--bg);color:var(--fg);min-height:100vh;overflow-x:hidden;}
+::-webkit-scrollbar{width:3px;}
+::-webkit-scrollbar-thumb{background:#1e3a5f;border-radius:2px;}
+
+/* ── AUTH SCREENS ── */
+#setup-screen,#login-screen{position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;}
+#setup-screen.hidden,#login-screen.hidden{display:none;}
+.auth-box{background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:36px;max-width:420px;width:100%;box-shadow:0 32px 80px #000;}
+.auth-logo{width:52px;height:52px;background:var(--grad);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;}
+.auth-title{font-size:20px;font-weight:800;color:var(--fg);text-align:center;margin-bottom:4px;}
+.auth-sub{font-size:12px;color:var(--muted);text-align:center;margin-bottom:20px;line-height:1.6;}
+.field{margin-bottom:12px;}
+.field label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:5px;}
+.field input{width:100%;padding:10px 13px;background:#060d1a;border:1.5px solid var(--border);border-radius:9px;color:var(--fg);font-size:14px;font-family:'Sarabun',sans-serif;outline:none;transition:border-color .2s;}
+.field input:focus{border-color:var(--blue);}
+.setup-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.btn-grad{width:100%;padding:12px;background:var(--grad);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Sarabun',sans-serif;transition:opacity .2s;margin-top:4px;}
+.btn-grad:hover{opacity:.88;}
+.btn-grad:disabled{opacity:.45;cursor:not-allowed;}
+.auth-err{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);color:var(--red);padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;display:none;}
+.auth-err.show{display:block;}
+.spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle;margin-right:8px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ── MAIN LAYOUT ── */
+#guard-app{display:none;min-height:100vh;flex-direction:column;}
+#guard-app.show{display:flex;}
+
+/* HEADER */
+.guard-header{background:linear-gradient(135deg,#050d1a,#0a1525);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
+.guard-brand{display:flex;align-items:center;gap:10px;}
+.guard-brand-icon{width:36px;height:36px;background:var(--grad);border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.guard-brand-name{font-size:14px;font-weight:800;color:var(--fg);}
+.guard-brand-sub{font-size:11px;color:var(--muted);}
+.guard-header-right{display:flex;align-items:center;gap:10px;}
+.time-display{font-size:18px;font-weight:800;color:var(--fg);font-variant-numeric:tabular-nums;letter-spacing:1px;}
+.date-display{font-size:10px;color:var(--muted);text-align:right;}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);}
+.sync-dot.err{background:var(--red);box-shadow:none;}
+.sync-dot.pending{background:var(--amber);animation:blink .8s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.3;}}
+.logout-btn-sm{padding:5px 11px;background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2);border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Sarabun',sans-serif;transition:all .2s;}
+
+/* ENTRANCE SELECTOR */
+.entrance-bar{background:#060d1a;border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.entrance-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;white-space:nowrap;}
+.entrance-select{flex:1;min-width:180px;padding:7px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;color:var(--fg);font-size:13px;font-family:'Sarabun',sans-serif;outline:none;cursor:pointer;}
+.entrance-select:focus{border-color:var(--blue);}
+.entrance-active-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.2);color:var(--green);font-size:11px;font-weight:700;white-space:nowrap;}
+.entrance-dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:pulse-g 2s infinite;}
+@keyframes pulse-g{0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,.4);}70%{box-shadow:0 0 0 4px rgba(74,222,128,0);}}
+
+/* MAIN CONTENT */
+.guard-main{flex:1;padding:20px;display:flex;flex-direction:column;gap:16px;max-width:700px;margin:0 auto;width:100%;}
+
+/* SCAN INPUT */
+.scan-card{background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:24px;position:relative;overflow:hidden;}
+.scan-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--grad);}
+.scan-title{font-size:13px;font-weight:800;color:var(--fg);margin-bottom:4px;display:flex;align-items:center;gap:8px;}
+.scan-sub{font-size:12px;color:var(--muted);margin-bottom:16px;}
+.scan-input-wrap{position:relative;}
+.scan-input{width:100%;padding:16px 56px 16px 18px;background:#060d1a;border:2px solid var(--border);border-radius:12px;color:var(--fg);font-size:20px;font-family:'Sarabun',monospace;font-weight:700;outline:none;transition:all .2s;letter-spacing:2px;}
+.scan-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(34,102,255,.15);}
+.scan-input::placeholder{font-size:14px;letter-spacing:0;font-weight:400;color:var(--muted);}
+.scan-clear-btn{position:absolute;right:14px;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:8px;background:rgba(100,116,139,.1);border:1px solid var(--dim);color:var(--muted);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .2s;}
+.scan-clear-btn:hover{background:rgba(248,113,113,.1);color:var(--red);}
+.scan-actions{display:flex;gap:10px;margin-top:12px;}
+.scan-btn{flex:1;padding:13px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;border:none;font-family:'Sarabun',sans-serif;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px;}
+.scan-btn-check{background:var(--grad);color:#fff;}
+.scan-btn-check:hover{opacity:.88;}
+.scan-btn-check:disabled{opacity:.45;cursor:not-allowed;}
+.scan-btn-manual{background:rgba(34,102,255,.1);color:#93c5fd;border:1px solid rgba(34,102,255,.2);}
+.scan-btn-manual:hover{background:rgba(34,102,255,.18);}
+
+/* RESULT PANEL */
+.result-panel{border-radius:16px;overflow:hidden;transition:all .3s;}
+.result-panel.hidden{display:none;}
+
+/* ── GRANTED — Bold Full Color ── */
+.result-granted{
+  background:linear-gradient(135deg,#064e24 0%,#065c2a 40%,#074d22 100%);
+  border:2px solid #16a34a;
+  box-shadow:0 0 0 1px rgba(74,222,128,.15), 0 8px 32px rgba(22,163,74,.35), 0 0 60px rgba(74,222,128,.08);
+  animation:grantedPop .35s cubic-bezier(.34,1.56,.64,1) both;
+}
+@keyframes grantedPop{
+  0%{transform:scale(.94);opacity:0;}
+  60%{transform:scale(1.02);}
+  100%{transform:scale(1);opacity:1;}
+}
+.result-granted .result-header{
+  background:linear-gradient(135deg,#16a34a 0%,#15803d 100%);
+  padding:20px 24px;
+  display:flex;align-items:center;gap:16px;
+  border-bottom:1px solid rgba(74,222,128,.25);
+  position:relative;overflow:hidden;
+}
+.result-granted .result-header::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(255,255,255,.08),transparent 60%);
+  pointer-events:none;
+}
+.granted-icon{
+  width:52px;height:52px;border-radius:14px;
+  background:rgba(255,255,255,.18);
+  border:2px solid rgba(255,255,255,.3);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  animation:iconPulse 1.8s ease infinite;
+}
+@keyframes iconPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,.3);}
+  50%{box-shadow:0 0 0 8px rgba(255,255,255,0);}
+}
+.granted-title{font-size:24px;font-weight:900;color:#fff;letter-spacing:-.5px;line-height:1.1;}
+.granted-sub{font-size:13px;color:rgba(255,255,255,.8);margin-top:4px;font-weight:600;}
+
+/* ── DENIED ── */
+.result-denied{background:linear-gradient(135deg,rgba(248,113,113,.08),rgba(248,113,113,.03));border:1px solid rgba(248,113,113,.3);}
+.result-denied .result-header{background:rgba(248,113,113,.1);padding:16px 20px;display:flex;align-items:center;gap:14px;border-bottom:1px solid rgba(248,113,113,.15);}
+.denied-icon{width:44px;height:44px;border-radius:12px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.3);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.denied-title{font-size:18px;font-weight:800;color:var(--red);}
+.denied-sub{font-size:12px;color:rgba(248,113,113,.7);margin-top:2px;}
+
+/* EMPLOYEE INFO — enhanced for granted */
+.emp-info{padding:20px 24px;display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+@media(max-width:480px){.emp-info{grid-template-columns:1fr;padding:16px;}}
+.info-item label{font-size:9px;font-weight:700;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:1.5px;display:block;margin-bottom:4px;}
+.result-granted .info-item label{color:rgba(255,255,255,.55);}
+.info-item value{font-size:13px;font-weight:700;color:#fff;display:block;}
+.result-denied .info-item label{color:var(--muted);}
+.result-denied .info-item value{color:var(--fg);}
+.info-item value.mono{font-family:monospace;font-size:12px;}
+.info-item value.large{font-size:18px;font-weight:900;letter-spacing:-.3px;}
+.info-item value.xl{font-size:22px;font-weight:900;letter-spacing:-.5px;}
+
+/* PILLS */
+.pill{display:inline-flex;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700;}
+.pill-green{background:rgba(74,222,128,.15);color:#86efac;border:1px solid rgba(74,222,128,.3);}
+.pill-red{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2);}
+.pill-blue{background:rgba(34,102,255,.15);color:#93c5fd;border:1px solid rgba(34,102,255,.25);}
+.pill-teal{background:rgba(0,229,209,.12);color:#5eead4;border:1px solid rgba(0,229,209,.25);}
+.pill-amber{background:rgba(251,191,36,.1);color:var(--amber);border:1px solid rgba(251,191,36,.2);}
+.pill-dim{background:rgba(100,116,139,.1);color:var(--muted);border:1px solid rgba(100,116,139,.2);}
+/* Granted variant pills — brighter */
+.result-granted .pill-blue{background:rgba(147,197,253,.15);color:#bfdbfe;border-color:rgba(147,197,253,.3);}
+.result-granted .pill-teal{background:rgba(94,234,212,.15);color:#a7f3d0;border-color:rgba(94,234,212,.3);}
+.result-granted .pill-amber{background:rgba(251,191,36,.15);color:#fde68a;border-color:rgba(251,191,36,.3);}
+.result-granted .pill-dim{background:rgba(255,255,255,.1);color:rgba(255,255,255,.6);border-color:rgba(255,255,255,.2);}
+
+/* GRANTED name highlight */
+.granted-name-block{
+  grid-column:1/-1;
+  padding:16px 20px;
+  background:rgba(0,0,0,.2);
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.08);
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+}
+.granted-name-en{font-size:26px;font-weight:900;color:#fff;letter-spacing:-.5px;line-height:1.1;}
+.granted-name-th{font-size:18px;font-weight:700;color:rgba(255,255,255,.8);margin-top:3px;}
+
+/* DIVIDER */
+.info-divider{grid-column:1/-1;height:1px;background:rgba(255,255,255,.08);}
+
+/* LOADING */
+.loading-state{padding:24px;text-align:center;background:var(--bg-card);border:1px solid var(--border);border-radius:16px;}
+.loading-spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px;}
+.loading-text{font-size:13px;color:var(--muted);}
+
+/* RECENT LOG */
+.log-card{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
+.log-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.log-title{font-size:12px;font-weight:800;color:var(--fg);}
+.log-count{background:var(--blue);color:#fff;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:700;}
+.log-list{max-height:260px;overflow-y:auto;}
+.log-row{padding:10px 16px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;border-bottom:1px solid rgba(30,58,95,.4);transition:background .15s;}
+.log-row:hover{background:var(--card);}
+.log-row:last-child{border-bottom:none;}
+.log-time{font-size:10px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;}
+.log-name{font-size:12px;font-weight:600;color:var(--fg);}
+.log-id{font-size:10px;color:var(--muted);font-family:monospace;}
+.log-status-ok{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0;}
+.log-status-deny{width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0;}
+.log-empty{padding:24px;text-align:center;color:var(--muted);font-size:12px;}
+
+/* STATS BAR */
+.stats-bar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+.stat-mini{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;position:relative;overflow:hidden;}
+.stat-mini::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--grad-d);}
+.stat-mini-num{font-size:22px;font-weight:900;line-height:1;margin-bottom:3px;}
+.stat-mini-label{font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+
+/* CONFIRM DIALOG */
+.confirm-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;}
+.confirm-overlay.hidden{display:none;}
+.confirm-box{background:var(--bg-card);border:1px solid #2266FF44;border-radius:18px;padding:28px;max-width:360px;width:100%;animation:pop .2s cubic-bezier(.34,1.56,.64,1);}
+@keyframes pop{from{transform:scale(.85);opacity:0;}to{transform:scale(1);opacity:1;}}
+.confirm-title{font-size:16px;font-weight:800;color:var(--fg);margin-bottom:6px;}
+.confirm-msg{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:20px;}
+.confirm-btns{display:flex;gap:10px;}
+.confirm-btns button{flex:1;padding:11px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Sarabun',sans-serif;border:none;transition:all .2s;}
+.confirm-cancel{background:var(--card);color:var(--muted);border:1px solid var(--dim)!important;}
+.confirm-cancel:hover{color:var(--fg);}
+.confirm-logout{background:linear-gradient(135deg,#dc2626,#f87171);color:#fff;}
+
+/* FOOTER */
+.guard-footer{padding:10px 20px;text-align:center;font-size:10px;color:var(--dim);border-top:1px solid var(--border);}
+
+/* RESPONSIVE */
+@media(max-width:480px){
+  .guard-main{padding:12px;}
+  .scan-input{font-size:18px;padding:14px 52px 14px 14px;}
+  .granted-name-en{font-size:20px;}
+  .time-display{font-size:16px;}
+}
+
+/* ── PERF indicator ── */
+.perf-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:9px;font-weight:700;background:rgba(0,229,209,.07);border:1px solid rgba(0,229,209,.2);color:var(--teal);position:absolute;top:14px;right:60px;}
+</style>
+</head>
+<body>
+
+<!-- ══ SETUP SCREEN ══ -->
+<div id="setup-screen">
+  <div class="auth-box" style="max-width:500px;">
+    <div class="auth-logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </div>
+    <div class="auth-title">Guard Terminal</div>
+    <div class="auth-sub">กรอก Firebase Config เพื่อเชื่อมต่อระบบ</div>
+    <div class="setup-grid">
+      <div class="field"><label>API Key</label><input id="cfg-apikey" placeholder="AIzaSy..."></div>
+      <div class="field"><label>Auth Domain</label><input id="cfg-authdomain" placeholder="project.firebaseapp.com"></div>
+      <div class="field"><label>Project ID</label><input id="cfg-projectid" placeholder="your-project-id"></div>
+      <div class="field"><label>App ID</label><input id="cfg-appid" placeholder="1:xxx:web:xxx"></div>
+    </div>
+    <div id="setup-err" class="auth-err"></div>
+    <button class="btn-grad" onclick="saveAndConnect()">🔌 เชื่อมต่อ Firebase</button>
+    <div style="margin-top:10px;text-align:center;">
+      <button onclick="resetSetup()" style="background:none;border:none;color:var(--dim);font-size:11px;cursor:pointer;font-family:'Sarabun',sans-serif;text-decoration:underline;">ล้างค่า Config</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ LOGIN SCREEN ══ -->
+<div id="login-screen" class="hidden">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </div>
+    <div class="auth-title">Guard Terminal</div>
+    <div class="auth-sub">เข้าสู่ระบบด้วยบัญชี Guard เพื่อเริ่มงาน</div>
+    <div id="login-err" class="auth-err"></div>
+    <div id="login-checking" style="display:none;text-align:center;padding:12px 0;color:var(--amber);font-size:12px;"><span class="spin"></span>กำลังตรวจสอบ...</div>
+    <div id="login-form">
+      <div class="field"><label>อีเมล</label><input type="email" id="login-email" placeholder="guard@company.com" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="field"><label>รหัสผ่าน</label><input type="password" id="login-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <button class="btn-grad" id="login-btn" onclick="doLogin()">เข้าสู่ระบบ</button>
+    </div>
+    <div style="margin-top:12px;text-align:center;">
+      <button onclick="resetSetup()" style="background:none;border:none;color:var(--dim);font-size:11px;cursor:pointer;font-family:'Sarabun',sans-serif;text-decoration:underline;">⚙️ เปลี่ยน Config</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ GUARD APP ══ -->
+<div id="guard-app">
+
+  <!-- HEADER -->
+  <div class="guard-header">
+    <div class="guard-brand">
+      <div class="guard-brand-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </div>
+      <div>
+        <div class="guard-brand-name">Guard Terminal</div>
+        <div class="guard-brand-sub" id="guard-name-display">—</div>
+      </div>
+    </div>
+    <div class="guard-header-right">
+      <div style="text-align:right;">
+        <div class="time-display" id="clock">00:00:00</div>
+        <div class="date-display" id="datedisp">—</div>
+      </div>
+      <div class="sync-dot" id="sync-dot"></div>
+      <button class="logout-btn-sm" onclick="openLogoutConfirm()">ออก</button>
+    </div>
+  </div>
+
+  <!-- ENTRANCE SELECTOR -->
+  <div class="entrance-bar">
+    <span class="entrance-label">จุดทางเข้า:</span>
+    <select class="entrance-select" id="entrance-select" onchange="onEntranceChange()">
+      <option value="">— เลือกจุดทางเข้า —</option>
+    </select>
+    <div class="entrance-active-pill" id="entrance-pill" style="display:none;">
+      <div class="entrance-dot"></div>
+      <span id="entrance-pill-text">—</span>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="guard-main">
+
+    <!-- STATS -->
+    <div class="stats-bar">
+      <div class="stat-mini"><div class="stat-mini-num" style="color:var(--green);" id="stat-ok">0</div><div class="stat-mini-label">ผ่านเข้า</div></div>
+      <div class="stat-mini"><div class="stat-mini-num" style="color:var(--red);" id="stat-deny">0</div><div class="stat-mini-label">ปฏิเสธ</div></div>
+      <div class="stat-mini"><div class="stat-mini-num" style="color:var(--amber);" id="stat-total">0</div><div class="stat-mini-label">ทั้งหมดวันนี้</div></div>
+    </div>
+
+    <!-- SCAN INPUT -->
+    <div class="scan-card">
+      <!-- perf badge shows lookup time -->
+      <div class="perf-badge" id="perf-badge" style="display:none;">
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="13 2 13 9 22 9"/><polyline points="11 22 11 15 2 15"/></svg>
+        <span id="perf-ms">0ms</span>
+      </div>
+      <div class="scan-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        สแกน Badge / Emp ID
+      </div>
+      <div class="scan-sub">สแกน Barcode หรือพิมพ์ Employee ID / Badge ID แล้วกด Enter</div>
+      <div class="scan-input-wrap">
+        <input type="text" id="scan-input" class="scan-input" placeholder="สแกน หรือพิมพ์ Emp ID / Badge ID..."
+          autocomplete="off" autocorrect="off" spellcheck="false"
+          onkeydown="if(event.key==='Enter')checkAccess()">
+        <button class="scan-clear-btn" onclick="clearScan()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="scan-actions">
+        <button class="scan-btn scan-btn-check" id="check-btn" onclick="checkAccess()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          ตรวจสอบสิทธิ์
+        </button>
+        <button class="scan-btn scan-btn-manual" onclick="focusScan()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          โฟกัส
+        </button>
+      </div>
+    </div>
+
+    <!-- LOADING -->
+    <div class="loading-state hidden" id="loading-state">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">กำลังตรวจสอบข้อมูล...</div>
+    </div>
+
+    <!-- RESULT PANEL -->
+    <div id="result-panel" class="result-panel hidden"></div>
+
+    <!-- RECENT LOG -->
+    <div class="log-card">
+      <div class="log-header">
+        <span class="log-title">ประวัติการสแกนวันนี้</span>
+        <span class="log-count" id="log-count">0</span>
+      </div>
+      <div class="log-list" id="log-list">
+        <div class="log-empty">ยังไม่มีการสแกน</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="guard-footer" id="guard-footer">© 2026 Building Access Control · Guard Terminal v3</div>
+</div>
+
+<!-- LOGOUT CONFIRM -->
+<div id="logout-confirm" class="confirm-overlay hidden">
+  <div class="confirm-box">
+    <div class="confirm-title">ออกจากระบบ?</div>
+    <div class="confirm-msg">ระบบจะ Logout — ต้อง Login ใหม่เพื่อเริ่มงาน</div>
+    <div class="confirm-btns">
+      <button class="confirm-cancel" onclick="closeLogoutConfirm()">ยกเลิก</button>
+      <button class="confirm-logout" onclick="doLogout()">ยืนยัน ออกจากระบบ</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const LS_KEY = 'bac_guard_cfg_v2';
+let db = null, auth = null, currentUser = null, currentEntrance = null;
+let allEmployees = [], allEntrances = [], todayLogs = [];
+let statOk = 0, statDeny = 0;
+
+// ══ O(1) LOOKUP MAPS — rebuilt every time employees snapshot updates ══
+let _empByEmpId  = new Map(); // empId  → employee object
+let _empByBadge  = new Map(); // badgeId → employee object
+
+function rebuildLookupMaps() {
+  _empByEmpId.clear();
+  _empByBadge.clear();
+  for (const emp of allEmployees) {
+    if (emp.empId)  _empByEmpId.set(emp.empId.toLowerCase(),  emp);
+    if (emp.badgeId) _empByBadge.set(emp.badgeId.toLowerCase(), emp);
+  }
+}
+
+function lookupEmployee(input) {
+  const key = input.toLowerCase();
+  return _empByEmpId.get(key) || _empByBadge.get(key) || null;
+}
+
+// ══ CLOCK ══
+function updateClock() {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,'0');
+  const mm = String(now.getMinutes()).padStart(2,'0');
+  const ss = String(now.getSeconds()).padStart(2,'0');
+  document.getElementById('clock').textContent = hh+':'+mm+':'+ss;
+  const days = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์'];
+  document.getElementById('datedisp').textContent = days[now.getDay()]+' '+now.getDate()+'/'+(now.getMonth()+1)+'/'+(now.getFullYear()+543);
+}
+setInterval(updateClock, 1000); updateClock();
+
+// ══ INIT ══
+(function init() {
+  const cfg = loadCfg();
+  if (cfg) { document.getElementById('setup-screen').classList.add('hidden'); connectFirebase(cfg, false); }
+})();
+
+function loadCfg() {
+  try { const r=localStorage.getItem(LS_KEY); if(!r)return null; const c=JSON.parse(r); return(c.apiKey&&c.projectId)?c:null; } catch(e){return null;}
+}
+
+function saveAndConnect() {
+  const cfg = {
+    apiKey:     document.getElementById('cfg-apikey').value.trim(),
+    authDomain: document.getElementById('cfg-authdomain').value.trim(),
+    projectId:  document.getElementById('cfg-projectid').value.trim(),
+    appId:      document.getElementById('cfg-appid').value.trim()
+  };
+  const errEl = document.getElementById('setup-err'); errEl.classList.remove('show');
+  if (!cfg.apiKey||!cfg.projectId||!cfg.authDomain) { errEl.textContent='กรุณากรอก API Key, Auth Domain และ Project ID'; errEl.classList.add('show'); return; }
+  localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+  connectFirebase(cfg, true);
+}
+
+function connectFirebase(cfg, fromForm) {
+  try {
+    if (firebase.apps.length) firebase.apps.forEach(a=>a.delete());
+    firebase.initializeApp(cfg);
+    db = firebase.firestore(); auth = firebase.auth();
+    document.getElementById('setup-screen').classList.add('hidden');
+    document.getElementById('login-screen').classList.remove('hidden');
+    auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
+      .finally(() => { auth.onAuthStateChanged(handleAuthChange); });
+  } catch(e) {
+    localStorage.removeItem(LS_KEY);
+    document.getElementById('setup-screen').classList.remove('hidden');
+    document.getElementById('login-screen').classList.add('hidden');
+    if (fromForm) { const el=document.getElementById('setup-err');el.textContent='Config ไม่ถูกต้อง: '+e.message;el.classList.add('show'); }
+  }
+}
+
+function resetSetup() { localStorage.removeItem(LS_KEY); location.reload(); }
+
+// ══ AUTH ══
+function handleAuthChange(user) {
+  if (user) {
+    currentUser = user;
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('guard-app').classList.add('show');
+    document.getElementById('guard-name-display').textContent = user.displayName || user.email;
+    initGuard();
+  } else {
+    setLoginLoading(false);
+    document.getElementById('login-screen').classList.remove('hidden');
+    document.getElementById('guard-app').classList.remove('show');
+  }
+}
+
+function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('login-err'); errEl.classList.remove('show');
+  if (!email||!pass) { errEl.textContent='กรุณากรอก Email และ Password'; errEl.classList.add('show'); return; }
+  setLoginLoading(true);
+  auth.signInWithEmailAndPassword(email, pass).catch(err => {
+    setLoginLoading(false);
+    let msg = '';
+    if (err.code==='auth/user-not-found'||err.code==='auth/wrong-password'||err.code==='auth/invalid-credential') msg='❌ Email หรือ Password ไม่ถูกต้อง';
+    else if (err.code==='auth/too-many-requests') msg='⚠️ Login ผิดพลาดหลายครั้ง';
+    else msg='❌ '+err.message;
+    errEl.textContent=msg; errEl.classList.add('show');
+  });
+}
+
+function setLoginLoading(on) {
+  document.getElementById('login-checking').style.display = on?'block':'none';
+  document.getElementById('login-form').style.opacity = on?'0.4':'1';
+  document.getElementById('login-form').style.pointerEvents = on?'none':'';
+}
+
+function openLogoutConfirm()  { document.getElementById('logout-confirm').classList.remove('hidden'); }
+function closeLogoutConfirm() { document.getElementById('logout-confirm').classList.add('hidden'); }
+function doLogout() { closeLogoutConfirm(); auth.signOut(); }
+
+// ══ GUARD INIT ══
+function initGuard() {
+  setSyncStatus('pending');
+
+  // ── Employees — onSnapshot keeps map fresh ──
+  db.collection('employees').onSnapshot(snap => {
+    allEmployees = snap.docs.map(d => ({...d.data(), _docId: d.id}));
+    rebuildLookupMaps();                    // O(n) once, then O(1) lookups
+    setSyncStatus('ok');
+  }, e => { console.error(e); setSyncStatus('err'); });
+
+  // ── Entrances ──
+  db.collection('entrances').orderBy('order').onSnapshot(snap => {
+    allEntrances = snap.docs.map(d => ({...d.data(), firestoreId: d.id}));
+    populateEntranceSelect();
+  }, e => console.error('entrances:', e));
+
+  // ── Today logs ──
+  loadTodayLogs();
+  focusScan();
+}
+
+function setSyncStatus(type) {
+  const dot = document.getElementById('sync-dot');
+  dot.className = 'sync-dot' + (type==='err'?' err':type==='pending'?' pending':'');
+}
+
+function populateEntranceSelect() {
+  const sel = document.getElementById('entrance-select');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— เลือกจุดทางเข้า —</option>';
+  allEntrances.filter(e=>e.status==='active').forEach(e => {
+    const o = document.createElement('option');
+    o.value = e.id; o.textContent = e.name + (e.zone?' ('+e.zone+')':'');
+    sel.appendChild(o);
+  });
+  if (prev) sel.value = prev;
+  if (sel.value) onEntranceChange();
+}
+
+function onEntranceChange() {
+  const sel   = document.getElementById('entrance-select');
+  const entId = sel.value;
+  const pill  = document.getElementById('entrance-pill');
+  const pillTxt = document.getElementById('entrance-pill-text');
+  if (entId) {
+    currentEntrance = allEntrances.find(e=>e.id===entId) || null;
+    pill.style.display = 'inline-flex';
+    pillTxt.textContent = currentEntrance ? currentEntrance.name : entId;
+  } else {
+    currentEntrance = null;
+    pill.style.display = 'none';
+  }
+}
+
+function loadTodayLogs() {
+  db.collection('accessLogs')
+    .where('guardUid','==', currentUser?.uid || '')
+    .orderBy('timestamp','desc').limit(50)
+    .onSnapshot(snap => {
+      todayLogs = snap.docs.map(d=>({...d.data(), id:d.id}));
+      renderTodayLog();
+      updateStats();
+    }, () => {
+      db.collection('accessLogs').orderBy('timestamp','desc').limit(50).get()
+        .then(snap => { todayLogs=snap.docs.map(d=>({...d.data(),id:d.id})); renderTodayLog(); updateStats(); })
+        .catch(()=>{});
+    });
+}
+
+function updateStats() {
+  statOk   = todayLogs.filter(r=>r.status==='allowed').length;
+  statDeny = todayLogs.filter(r=>r.status==='denied').length;
+  document.getElementById('stat-ok').textContent    = statOk;
+  document.getElementById('stat-deny').textContent  = statDeny;
+  document.getElementById('stat-total').textContent = todayLogs.length;
+  document.getElementById('log-count').textContent  = todayLogs.length;
+}
+
+function renderTodayLog() {
+  const list = document.getElementById('log-list');
+  if (!todayLogs.length) { list.innerHTML='<div class="log-empty">ยังไม่มีการสแกน</div>'; return; }
+  list.innerHTML = todayLogs.slice(0,30).map(r => {
+    const timeStr = r.datetimeDisplay ? r.datetimeDisplay.split(' ')[1]||r.datetimeDisplay : '—';
+    return '<div class="log-row">' +
+      '<div><div class="log-time">'+timeStr+'</div></div>' +
+      '<div><div class="log-name">'+(r.nameEn||r.nameTh||r.empId||'—')+'</div><div class="log-id">'+(r.empId||r.badgeId||'—')+'</div></div>' +
+      '<div class="'+(r.status==='allowed'?'log-status-ok':'log-status-deny')+'"></div>' +
+      '</div>';
+  }).join('');
+}
+
+// ══ ACCESS CHECK — O(1) map lookup, no loading spinner delay ══
+async function checkAccess() {
+  const input = document.getElementById('scan-input').value.trim();
+  if (!input) { focusScan(); return; }
+  if (!currentEntrance) {
+    showResultDenied(null,'⚠️ กรุณาเลือกจุดทางเข้าก่อน','ยังไม่ได้เลือก Entrance');
+    focusScan(); return;
+  }
+
+  document.getElementById('check-btn').disabled = true;
+  hideResult();
+
+  const t0 = performance.now();
+
+  // ── O(1) Map lookup — no Firestore query, no loading state needed ──
+  const emp = lookupEmployee(input);
+
+  const elapsed = Math.round(performance.now() - t0);
+  showPerfBadge(elapsed);
+
+  document.getElementById('check-btn').disabled = false;
+
+  const now = new Date();
+  const datetimeDisplay = now.toLocaleDateString('th-TH') + ' ' + now.toTimeString().slice(0,8);
+
+  if (emp) {
+    showResultGranted(emp);
+    saveLog({
+      empId:       emp.empId || emp._docId || input,
+      badgeId:     emp.badgeId || '',
+      nameEn:      emp.nameEn || '',
+      nameTh:      emp.nameTh || '',
+      site:        emp.site || '',
+      dept:        emp.dept || '',
+      title:       emp.title || '',
+      track:       emp.track || '',
+      entrance:    currentEntrance.name,
+      entranceId:  currentEntrance.id,
+      status:      'allowed',
+      guardUid:    currentUser?.uid || '',
+      guardEmail:  currentUser?.email || '',
+      datetimeDisplay,
+      timestamp:   firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } else {
+    showResultDenied(null, 'ไม่พบข้อมูลพนักงาน', 'Emp ID / Badge ID: ' + input + ' ไม่มีในระบบ');
+    saveLog({
+      empId:       input,
+      badgeId:     '',
+      nameEn:      'NOT FOUND',
+      nameTh:      'ไม่พบข้อมูล',
+      site:        '',
+      dept:        '',
+      title:       '',
+      track:       '',
+      entrance:    currentEntrance.name,
+      entranceId:  currentEntrance.id,
+      status:      'denied',
+      guardUid:    currentUser?.uid || '',
+      guardEmail:  currentUser?.email || '',
+      datetimeDisplay,
+      timestamp:   firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
+
+  // Auto-clear after 4s
+  setTimeout(() => { clearScan(); }, 4000);
+}
+
+function showPerfBadge(ms) {
+  const b = document.getElementById('perf-badge');
+  const t = document.getElementById('perf-ms');
+  t.textContent = ms + 'ms';
+  b.style.display = 'inline-flex';
+  clearTimeout(b._timer);
+  b._timer = setTimeout(() => b.style.display='none', 5000);
+}
+
+async function saveLog(logData) {
+  try {
+    await db.collection('accessLogs').add(logData);
+    todayLogs.unshift({...logData, id: Date.now().toString()});
+    renderTodayLog(); updateStats();
+  } catch(e) { console.error('saveLog error:', e); }
+}
+
+// ══ RESULT UI ══
+function showResultGranted(emp) {
+  const panel = document.getElementById('result-panel');
+  const sitePill = emp.site==='PRB'?'pill-blue':emp.site==='BPI'?'pill-teal':emp.site==='HO'?'pill-amber':'pill-dim';
+  panel.className = 'result-panel result-granted';
+
+  panel.innerHTML =
+    '<div class="result-header">' +
+      '<div class="granted-icon">' +
+        '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
+      '</div>' +
+      '<div>' +
+        '<div class="granted-title">✅ อนุญาต</div>' +
+        '<div class="granted-sub">ผ่านการตรวจสอบ · ' + currentEntrance.name + '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="emp-info">' +
+      '<div class="info-item granted-name-block">' +
+        '<div>' +
+          '<div class="granted-name-en">'+(emp.nameEn||'—')+'</div>' +
+          '<div class="granted-name-th">'+(emp.nameTh||'—')+'</div>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">' +
+          '<span class="pill pill-green" style="font-size:11px;padding:4px 12px;">✓ GRANTED</span>' +
+          '<span class="pill '+sitePill+'" style="font-size:11px;padding:4px 12px;">'+(emp.site||'—')+'</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="info-divider"></div>' +
+      '<div class="info-item"><label>EMP ID</label><value class="mono" style="font-size:15px;letter-spacing:1px;">'+(emp.empId||emp._docId||'—')+'</value></div>' +
+      '<div class="info-item"><label>BADGE ID</label><value class="mono" style="font-size:15px;letter-spacing:1px;">'+(emp.badgeId||'—')+'</value></div>' +
+      '<div class="info-item"><label>DEPARTMENT</label><value>'+(emp.dept||'—')+'</value></div>' +
+      '<div class="info-item"><label>TITLE</label><value>'+(emp.title||'—')+'</value></div>' +
+      '<div class="info-item"><label>TRACK</label><value><span class="pill pill-amber">'+(emp.track||'—')+'</span></value></div>' +
+    '</div>';
+
+  panel.classList.remove('hidden');
+  panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  if (navigator.vibrate) navigator.vibrate([50,30,80]);
+}
+
+function showResultDenied(emp, title, reason) {
+  const panel = document.getElementById('result-panel');
+  panel.className = 'result-panel result-denied';
+  panel.innerHTML =
+    '<div class="result-header">' +
+      '<div class="denied-icon">' +
+        '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+      '</div>' +
+      '<div>' +
+        '<div class="denied-title">❌ ปฏิเสธ</div>' +
+        '<div class="denied-sub">'+(title||'ไม่พบข้อมูล')+'</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="emp-info" style="grid-template-columns:1fr;">' +
+      '<div class="info-item"><label>สาเหตุ</label><value>'+(reason||'ไม่พบข้อมูลในระบบ')+'</value></div>' +
+    '</div>';
+
+  panel.classList.remove('hidden');
+  panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  if (navigator.vibrate) navigator.vibrate([100,50,100]);
+}
+
+function focusScan() { document.getElementById('scan-input').focus(); }
+function clearScan() { document.getElementById('scan-input').value=''; focusScan(); hideResult(); }
+function hideResult() {
+  document.getElementById('result-panel').classList.add('hidden');
+  document.getElementById('loading-state').classList.add('hidden');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key==='Escape') { clearScan(); closeLogoutConfirm(); }
+});
+</script>
+</body>
+</html>

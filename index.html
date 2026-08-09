@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Access Control — Admin Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --wd-navy:#00161F;--wd-navy2:#002232;--wd-navy3:#002E42;
+  --wd-blue:#2266FF;--wd-green:#00E5D1;--wd-dark-blue:#003087;
+  --grad:linear-gradient(135deg,#003087 0%,#2266FF 50%,#00E5D1 100%);
+  --grad-h:linear-gradient(90deg,#2266FF 0%,#00E5D1 100%);
+  --grad-side:linear-gradient(180deg,#003087 0%,#2266FF 60%,#00E5D1 100%);
+  --bg:#00161F;--bg-card:#002232;--card:#002E42;--card-hi:#003350;
+  --border:rgba(0,87,184,.28);--border-hi:rgba(34,102,255,.5);
+  --fg:#f1f5f9;--muted:#7fb3cc;--dim:#3a6a82;
+  --green:#4ade80;--red:#f87171;--amber:#fbbf24;--teal:#00E5D1;
+  --sidebar-w:240px;--sidebar-collapsed:64px;--topbar-h:56px;
+}
+body{font-family:'Sarabun',sans-serif;background:var(--bg);color:var(--fg);min-height:100vh;display:flex;}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-thumb{background:rgba(34,102,255,.3);border-radius:2px;}
+#setup-screen,#login-screen{position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;}
+#setup-screen.hidden,#login-screen.hidden{display:none;}
+.auth-box{background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:40px;max-width:480px;width:100%;box-shadow:0 32px 80px rgba(0,22,31,.8);}
+.auth-logo{width:56px;height:56px;background:var(--grad);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:24px;}
+.auth-title{font-size:22px;font-weight:800;color:var(--fg);text-align:center;margin-bottom:6px;}
+.auth-sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:24px;line-height:1.6;}
+.auth-role-badge{display:block;width:fit-content;margin:0 auto 20px;padding:4px 12px;border-radius:20px;background:rgba(34,102,255,.12);border:1px solid rgba(34,102,255,.3);color:#93c5fd;font-size:11px;font-weight:700;}
+.field{margin-bottom:14px;}
+.field label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px;}
+.field input{width:100%;padding:11px 14px;background:var(--wd-navy);border:1.5px solid var(--border);border-radius:10px;color:var(--fg);font-size:14px;font-family:'Sarabun',sans-serif;outline:none;transition:border-color .2s;}
+.field input:focus{border-color:var(--wd-blue);}
+.setup-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.btn-grad{width:100%;padding:12px;background:var(--grad-h);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Sarabun',sans-serif;transition:opacity .2s;margin-top:4px;}
+.btn-grad:hover{opacity:.85;}
+.btn-grad:disabled{opacity:.5;cursor:not-allowed;}
+.btn-demo{width:100%;padding:11px;background:var(--bg-card);color:var(--muted);border:1px solid var(--border);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Sarabun',sans-serif;margin-top:8px;transition:all .2s;}
+.btn-demo:hover{border-color:var(--border-hi);color:var(--fg);}
+.auth-err{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);color:var(--red);padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:14px;display:none;}
+.auth-err.show{display:block;}
+.auth-checking{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);color:var(--amber);padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:14px;display:none;align-items:center;gap:8px;}
+.auth-checking.show{display:flex;}
+.spin{width:14px;height:14px;border:2px solid rgba(251,191,36,.3);border-top-color:var(--amber);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.auth-divider{display:flex;align-items:center;gap:12px;margin:16px 0;color:var(--dim);font-size:12px;}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border);}
+/* SIDEBAR */
+#sidebar{width:var(--sidebar-w);min-height:100vh;background:var(--wd-navy);border-right:1px solid var(--border);display:none;flex-direction:column;position:fixed;left:0;top:0;bottom:0;z-index:200;transition:width .25s cubic-bezier(.4,0,.2,1);overflow:hidden;}
+#sidebar.collapsed{width:var(--sidebar-collapsed);}
+#sidebar.show{display:flex;}
+.sb-brand{padding:0 16px;height:var(--topbar-h);display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);flex-shrink:0;overflow:hidden;}
+.sb-brand-icon{width:36px;height:36px;border-radius:9px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;box-shadow:0 4px 12px rgba(34,102,255,.3);}
+.sb-brand-text{overflow:hidden;white-space:nowrap;}
+.sb-brand-title{font-size:13px;font-weight:800;color:var(--fg);line-height:1.2;}
+.sb-brand-sub{font-size:10px;color:var(--muted);}
+.sb-toggle{margin:8px 12px;padding:8px;border-radius:8px;background:transparent;border:1px solid var(--border);color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;}
+.sb-toggle:hover{background:var(--bg-card);color:var(--fg);}
+.sb-nav{flex:1;overflow-y:auto;overflow-x:hidden;padding:8px 0;}
+.sb-group{margin-bottom:4px;}
+.sb-group-label{padding:8px 16px 4px;font-size:9px;font-weight:700;color:var(--dim);letter-spacing:2px;text-transform:uppercase;white-space:nowrap;overflow:hidden;transition:opacity .2s;}
+#sidebar.collapsed .sb-group-label{opacity:0;}
+.sb-item{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;transition:all .18s;position:relative;overflow:hidden;white-space:nowrap;border-left:3px solid transparent;}
+.sb-item:hover{background:var(--bg-card);border-left-color:var(--wd-blue);}
+.sb-item.active{background:linear-gradient(90deg,rgba(34,102,255,.15),rgba(34,102,255,.05));border-left-color:var(--wd-blue);}
+.sb-item.active .sb-item-label{color:var(--fg);font-weight:700;}
+.sb-icon{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s;}
+.sb-item .sb-icon{background:transparent;}
+.sb-item:hover .sb-icon{background:rgba(34,102,255,.12);}
+.sb-item.active .sb-icon{background:rgba(34,102,255,.18);}
+.sb-item-label{font-size:13px;font-weight:600;color:var(--muted);transition:color .18s;overflow:hidden;}
+.sb-item-badge{margin-left:auto;font-size:9px;font-weight:700;background:var(--wd-blue);color:#fff;padding:2px 7px;border-radius:20px;flex-shrink:0;}
+#sidebar.collapsed .sb-item-label,#sidebar.collapsed .sb-item-badge{display:none;}
+.sb-tooltip{position:absolute;left:calc(var(--sidebar-collapsed) + 8px);top:50%;transform:translateY(-50%);background:#1e293b;color:#fff;padding:5px 10px;border-radius:7px;font-size:12px;font-weight:600;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.4);}
+#sidebar.collapsed .sb-item:hover .sb-tooltip{opacity:1;}
+.sb-bottom{padding:12px;border-top:1px solid var(--border);flex-shrink:0;overflow:hidden;}
+.sb-user{display:flex;align-items:center;gap:10px;padding:8px 4px;}
+.sb-avatar{width:34px;height:34px;border-radius:9px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0;}
+.sb-user-info{overflow:hidden;flex:1;}
+.sb-user-name{font-size:12px;font-weight:700;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sb-user-role{font-size:10px;color:var(--muted);}
+#sidebar.collapsed .sb-user-info{display:none;}
+.sb-logout{padding:7px;border-radius:8px;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.2);color:var(--red);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;}
+.sb-logout:hover{background:rgba(248,113,113,.2);}
+.sb-sync{display:flex;align-items:center;gap:6px;padding:6px 4px;margin-bottom:6px;}
+.sync-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.sync-dot.ok{background:var(--green);box-shadow:0 0 6px var(--green);}
+.sync-dot.err{background:var(--red);}
+.sync-dot.pending{background:var(--amber);animation:blink .8s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.3;}}
+.sb-sync-label{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;}
+#sidebar.collapsed .sb-sync-label{display:none;}
+#app-shell{display:flex;flex:1;flex-direction:column;margin-left:var(--sidebar-w);transition:margin-left .25s cubic-bezier(.4,0,.2,1);}
+#app-shell.collapsed{margin-left:var(--sidebar-collapsed);}
+#topbar{height:var(--topbar-h);background:linear-gradient(135deg,var(--wd-navy) 0%,var(--wd-navy2) 100%);border-bottom:1px solid var(--border);display:none;align-items:center;justify-content:space-between;padding:0 20px;position:sticky;top:0;z-index:100;}
+#topbar.show{display:flex;}
+.topbar-page-title{font-size:14px;font-weight:800;color:var(--fg);}
+.topbar-page-sub{font-size:11px;color:var(--muted);}
+.topbar-right{display:flex;align-items:center;gap:8px;}
+.topbar-user{font-size:12px;color:var(--fg);font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+main{flex:1;padding:24px 20px;overflow-x:hidden;}
+.page{display:none;}
+.page.active{display:block;}
+.section-title{font-size:13px;font-weight:800;color:var(--fg);margin-bottom:4px;}
+.section-sub{font-size:12px;color:var(--muted);margin-bottom:16px;}
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:20px;transition:border-color .2s;}
+.card:hover{border-color:var(--border-hi);}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:1100px){.three-col{grid-template-columns:1fr 1fr;}}
+@media(max-width:700px){.three-col{grid-template-columns:1fr;}}
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;}
+@media(max-width:900px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
+.stat-card{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:20px;position:relative;overflow:hidden;transition:all .2s;}
+.stat-card:hover{border-color:var(--border-hi);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,22,31,.5);}
+.stat-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--grad-side);}
+.stat-card::after{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:var(--grad-h);opacity:.4;}
+.stat-num{font-size:32px;font-weight:900;line-height:1;margin-bottom:4px;}
+.stat-num.blue{background:var(--grad-h);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.stat-num.green{color:var(--green);}
+.stat-num.red{color:var(--red);}
+.stat-num.amber{color:var(--amber);}
+.stat-label{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
+.stat-icon{position:absolute;right:16px;top:50%;transform:translateY(-50%);opacity:.12;}
+.form-row{display:grid;gap:12px;margin-bottom:12px;}
+.form-row.cols-2{grid-template-columns:1fr 1fr;}
+.form-row.cols-3{grid-template-columns:1fr 1fr 1fr;}
+.form-row.cols-4{grid-template-columns:1fr 1fr 1fr 1fr;}
+.form-row.cols-5{grid-template-columns:1fr 1fr 1fr 1fr 1fr;}
+.form-row.cols-6{grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr;}
+@media(max-width:1200px){.form-row.cols-6{grid-template-columns:1fr 1fr 1fr;}.form-row.cols-5{grid-template-columns:1fr 1fr 1fr;}}
+@media(max-width:900px){.form-row.cols-4,.form-row.cols-5,.form-row.cols-6{grid-template-columns:1fr 1fr;}.form-row.cols-3{grid-template-columns:1fr 1fr;}}
+@media(max-width:700px){.form-row.cols-2,.form-row.cols-3,.form-row.cols-4,.form-row.cols-5,.form-row.cols-6{grid-template-columns:1fr;}}
+.form-field label{display:block;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;}
+.form-field input,.form-field select{width:100%;padding:10px 13px;background:var(--wd-navy);border:1px solid var(--border);border-radius:9px;color:var(--fg);font-size:13px;font-family:'Sarabun',sans-serif;outline:none;transition:border-color .2s,box-shadow .2s;}
+.form-field input:focus,.form-field select:focus{border-color:var(--wd-blue);box-shadow:0 0 0 3px rgba(34,102,255,.12);}
+.form-field input.mono{font-family:monospace;}
+.divider-line{height:1px;background:var(--border);margin:16px 0;}
+.section-label{font-size:11px;font-weight:700;color:#93c5fd;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;}
+.btn{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:none;font-family:'Sarabun',sans-serif;transition:all .2s;white-space:nowrap;}
+.btn-primary{background:var(--grad-h);color:#fff;box-shadow:0 4px 12px rgba(34,102,255,.3);}
+.btn-primary:hover{opacity:.88;transform:translateY(-1px);}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.btn-secondary{background:var(--card);color:var(--muted);border:1px solid var(--border);}
+.btn-secondary:hover{background:var(--card-hi);color:var(--fg);border-color:var(--border-hi);}
+.btn-danger{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2);}
+.btn-danger:hover{background:rgba(248,113,113,.2);}
+.btn-amber{background:rgba(251,191,36,.1);color:var(--amber);border:1px solid rgba(251,191,36,.2);}
+.btn-amber:hover{background:rgba(251,191,36,.2);}
+.btn-pdf{background:rgba(239,68,68,.12);color:#fca5a5;border:1px solid rgba(239,68,68,.25);}
+.btn-pdf:hover{background:rgba(239,68,68,.22);color:#fff;}
+.btn-teal{background:rgba(0,229,209,.1);color:var(--teal);border:1px solid rgba(0,229,209,.25);}
+.btn-teal:hover{background:rgba(0,229,209,.2);}
+.btn-purple{background:rgba(139,92,246,.1);color:#c4b5fd;border:1px solid rgba(139,92,246,.25);}
+.btn-purple:hover{background:rgba(139,92,246,.2);}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;}
+.status-msg{font-size:12px;font-weight:700;padding:8px 12px;border-radius:8px;margin-top:10px;display:none;}
+.status-msg.ok{background:rgba(74,222,128,.1);color:var(--green);border:1px solid rgba(74,222,128,.2);display:block;}
+.status-msg.err{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2);display:block;}
+.search-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+.search-bar input{flex:1;min-width:200px;padding:9px 12px;background:var(--wd-navy);border:1px solid var(--border);border-radius:8px;color:var(--fg);font-size:13px;font-family:'Sarabun',sans-serif;outline:none;transition:border-color .2s;}
+.search-bar input:focus{border-color:var(--wd-blue);}
+.search-bar select{padding:9px 12px;background:var(--wd-navy);border:1px solid var(--border);border-radius:8px;color:var(--fg);font-size:12px;font-family:'Sarabun',sans-serif;outline:none;}
+.tbl-wrap{border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.tbl-head{background:var(--wd-navy);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);}
+.tbl-head-title{font-size:12px;font-weight:700;color:var(--fg);}
+.count-pill{background:var(--grad-h);color:#fff;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+thead tr{background:var(--wd-navy);}
+thead th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--border);white-space:nowrap;}
+tbody tr{border-bottom:1px solid rgba(0,87,184,.1);transition:background .15s;}
+tbody tr:hover{background:var(--bg-card);}
+td{padding:9px 12px;color:#cbd5e1;vertical-align:middle;}
+.pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;}
+.pill-green{background:rgba(74,222,128,.1);color:var(--green);border:1px solid rgba(74,222,128,.2);}
+.pill-red{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2);}
+.pill-blue{background:rgba(34,102,255,.1);color:#93c5fd;border:1px solid rgba(34,102,255,.2);}
+.pill-amber{background:rgba(251,191,36,.1);color:var(--amber);border:1px solid rgba(251,191,36,.2);}
+.pill-dim{background:rgba(58,106,130,.2);color:var(--muted);border:1px solid rgba(58,106,130,.3);}
+.pill-teal{background:rgba(0,229,209,.1);color:var(--teal);border:1px solid rgba(0,229,209,.2);}
+.pill-purple{background:rgba(139,92,246,.1);color:#c4b5fd;border:1px solid rgba(139,92,246,.2);}
+.entrance-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-top:14px;}
+.ent-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:18px;position:relative;overflow:hidden;transition:all .2s;}
+.ent-card:hover{border-color:var(--border-hi);transform:translateY(-2px);}
+.ent-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--grad-side);}
+.ent-name{font-size:14px;font-weight:800;color:var(--fg);margin-bottom:4px;}
+.ent-zone{font-size:11px;color:var(--muted);margin-bottom:10px;}
+.ent-stats{display:flex;gap:12px;margin-bottom:12px;}
+.ent-stat-num{font-size:18px;font-weight:800;}
+.ent-stat-label{font-size:10px;color:var(--muted);}
+.ent-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.filter-bar{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:14px;}
+@media(max-width:900px){.filter-bar{grid-template-columns:1fr 1fr;}}
+.modal-overlay{position:fixed;inset:0;z-index:500;background:rgba(0,22,31,.8);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:20px;}
+.modal-overlay.hidden{display:none;}
+.modal-box{background:var(--bg-card);border:1px solid var(--border-hi);border-radius:18px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;animation:modal-in .25s cubic-bezier(.34,1.56,.64,1);}
+@keyframes modal-in{from{transform:scale(.85);opacity:0;}to{transform:scale(1);opacity:1;}}
+.modal-head{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg-card);z-index:1;}
+.modal-head-title{font-size:15px;font-weight:800;color:var(--fg);}
+.modal-close{width:30px;height:30px;border-radius:8px;background:var(--card);border:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .2s;}
+.modal-close:hover{background:var(--card-hi);color:var(--fg);}
+.modal-body{padding:22px;}
+.modal-footer{padding:16px 22px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;}
+.confirm-overlay{position:fixed;inset:0;z-index:9998;background:rgba(0,22,31,.8);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:20px;}
+.confirm-overlay.hidden{display:none;}
+.confirm-box{background:var(--bg-card);border:1px solid var(--border-hi);border-radius:20px;padding:32px;max-width:380px;width:100%;animation:modal-in .2s cubic-bezier(.34,1.56,.64,1);text-align:center;}
+.confirm-icon{width:52px;height:52px;border-radius:14px;margin:0 auto 18px;display:flex;align-items:center;justify-content:center;}
+.confirm-icon.logout{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.25);}
+.confirm-title{font-size:17px;font-weight:800;color:var(--fg);margin-bottom:8px;}
+.confirm-msg{font-size:13px;color:var(--muted);line-height:1.65;margin-bottom:24px;}
+.confirm-user{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:20px;background:rgba(34,102,255,.08);border:1px solid rgba(34,102,255,.2);font-size:12px;font-weight:700;color:#93c5fd;margin-bottom:24px;}
+.confirm-btns{display:flex;gap:10px;}
+.confirm-btns button{flex:1;padding:11px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Sarabun',sans-serif;transition:all .2s;border:none;}
+.confirm-cancel{background:var(--card);color:var(--muted);border:1px solid var(--border) !important;}
+.confirm-cancel:hover{background:var(--card-hi);color:var(--fg);}
+.confirm-logout{background:linear-gradient(135deg,#dc2626,#f87171);color:#fff;}
+.confirm-logout:hover{opacity:.88;}
+.date-filter-section{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:14px;}
+.date-filter-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;}
+.date-filter-title{font-size:12px;font-weight:800;color:var(--fg);display:flex;align-items:center;gap:8px;}
+.date-active-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;background:rgba(34,102,255,.12);border:1px solid rgba(34,102,255,.3);color:#93c5fd;font-size:10px;font-weight:700;}
+.quick-date-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+.quick-btn{padding:6px 14px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted);font-family:'Sarabun',sans-serif;transition:all .2s;white-space:nowrap;}
+.quick-btn:hover{border-color:var(--wd-blue);color:#93c5fd;background:rgba(34,102,255,.08);}
+.quick-btn.active-quick{background:rgba(34,102,255,.15);border-color:rgba(34,102,255,.5);color:#93c5fd;}
+.date-range-row{display:grid;grid-template-columns:1fr 1fr auto auto;gap:10px;align-items:end;}
+.date-field label{display:block;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;}
+.date-field input[type=date]{width:100%;padding:10px 13px;background:var(--wd-navy);border:1px solid var(--border);border-radius:9px;color:var(--fg);font-size:13px;font-family:'Sarabun',sans-serif;outline:none;transition:border-color .2s;color-scheme:dark;}
+.date-field input[type=date]:focus{border-color:var(--wd-blue);}
+.date-field input[type=date].has-value{border-color:rgba(34,102,255,.4);}
+.date-summary-bar{display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(34,102,255,.05);border:1px solid rgba(34,102,255,.15);border-radius:8px;margin-top:12px;font-size:12px;color:var(--muted);flex-wrap:wrap;}
+.date-summary-bar.hidden{display:none;}
+.date-result-count{margin-left:auto;background:var(--grad-h);color:#fff;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;}
+.debug-strip{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:11px;color:var(--amber);font-family:monospace;}
+.page-header{margin-bottom:20px;}
+.page-header-title{font-size:20px;font-weight:800;color:var(--fg);margin-bottom:4px;}
+.page-header-sub{font-size:13px;color:var(--muted);}
+.page-header-bar{height:3px;width:48px;background:var(--grad-h);border-radius:2px;margin-top:8px;}
+#main-footer{display:none;border-top:1px solid var(--border);padding:14px;text-align:center;font-size:11px;color:var(--dim);background:var(--wd-navy);}
+#pdf-modal{position:fixed;inset:0;z-index:2000;background:rgba(0,22,31,.9);backdrop-filter:blur(8px);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:20px;overflow-y:auto;}
+#pdf-modal.hidden{display:none;}
+.pdf-modal-toolbar{width:100%;max-width:880px;display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;}
+.pdf-modal-title{font-size:14px;font-weight:800;color:#fff;display:flex;align-items:center;gap:8px;}
+.pdf-modal-actions{display:flex;gap:8px;}
+#pdf-preview-frame{width:100%;max-width:880px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 32px 80px rgba(0,0,0,.6);}
+
+/* ══ EMPLOYEE PAGE ══ */
+.emp-search-inline{display:flex;gap:8px;align-items:center;padding:12px 16px;background:var(--wd-navy);border:1px solid var(--border);border-radius:9px;margin-bottom:16px;transition:border-color .2s;}
+.emp-search-inline:focus-within{border-color:var(--wd-blue);box-shadow:0 0 0 3px rgba(34,102,255,.12);}
+.emp-search-inline svg{flex-shrink:0;opacity:.5;}
+.emp-search-inline input{flex:1;background:transparent;border:none;outline:none;color:var(--fg);font-size:13px;font-family:'Sarabun',sans-serif;}
+.emp-search-inline input::placeholder{color:var(--dim);}
+.emp-search-inline button{padding:6px 16px;background:var(--grad-h);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Sarabun',sans-serif;white-space:nowrap;transition:opacity .2s;}
+.emp-search-inline button:hover{opacity:.85;}
+.emp-form-full{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:28px;transition:border-color .2s;margin-bottom:20px;}
+.emp-form-full:hover{border-color:var(--border-hi);}
+.emp-form-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
+.emp-form-title{font-size:16px;font-weight:800;color:var(--fg);margin-bottom:4px;}
+.emp-form-sub{font-size:12px;color:var(--muted);}
+.emp-form-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+
+/* ══ GUARD USERS PAGE ══ */
+.guard-form-card{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:28px;margin-bottom:20px;transition:border-color .2s;}
+.guard-form-card:hover{border-color:var(--border-hi);}
+.guard-form-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
+.guard-form-title{font-size:16px;font-weight:800;color:var(--fg);margin-bottom:4px;}
+.guard-form-sub{font-size:12px;color:var(--muted);}
+.guard-form-actions{display:flex;align-items:center;gap:8px;}
+.guard-info-bar{display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(251,191,36,.05);border:1px solid rgba(251,191,36,.2);border-radius:9px;margin-top:16px;}
+.guard-info-bar svg{flex-shrink:0;opacity:.7;}
+.guard-info-bar span{font-size:12px;color:var(--amber);}
+.guard-list-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-top:4px;}
+.guard-user-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:18px;position:relative;overflow:hidden;transition:all .2s;}
+.guard-user-card:hover{border-color:var(--border-hi);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,22,31,.5);}
+.guard-user-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--grad-side);}
+.guard-card-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;}
+.guard-card-avatar{width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,rgba(34,102,255,.25),rgba(0,229,209,.15));border:1px solid rgba(34,102,255,.3);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+.guard-card-meta{flex:1;padding:0 10px;}
+.guard-card-name{font-size:14px;font-weight:800;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.guard-card-email{font-size:11px;color:var(--muted);margin-top:2px;}
+.guard-card-badges{display:flex;gap:6px;align-items:center;flex-shrink:0;}
+.guard-card-info{display:flex;flex-direction:column;gap:6px;padding-top:12px;border-top:1px solid var(--border);}
+.guard-card-info-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);}
+.guard-card-info-row svg{flex-shrink:0;opacity:.6;}
+.guard-card-actions{display:flex;gap:6px;margin-top:12px;}
+
+/* ══ ADMIN RIGHTS PAGE ══ */
+.admin-form-card{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:28px;margin-bottom:20px;transition:border-color .2s;position:relative;overflow:hidden;}
+.admin-form-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#7c3aed,#a78bfa,#00E5D1);}
+.admin-form-card:hover{border-color:rgba(139,92,246,.4);}
+.admin-warn-bar{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.2);border-radius:10px;margin-bottom:20px;}
+.admin-warn-bar svg{flex-shrink:0;margin-top:1px;}
+.admin-warn-bar-text{font-size:12px;color:var(--red);line-height:1.7;}
+.admin-warn-bar-text strong{color:#fca5a5;}
+.admin-list-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;margin-top:4px;}
+.admin-user-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:18px;position:relative;overflow:hidden;transition:all .2s;}
+.admin-user-card:hover{border-color:rgba(139,92,246,.4);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,22,31,.5);}
+.admin-user-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#7c3aed,#a78bfa);}
+.admin-card-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;}
+.admin-card-avatar{width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,rgba(124,58,237,.25),rgba(167,139,250,.15));border:1px solid rgba(139,92,246,.3);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+.admin-card-meta{flex:1;padding:0 10px;}
+.admin-card-name{font-size:14px;font-weight:800;color:var(--fg);}
+.admin-card-email{font-size:11px;color:var(--muted);margin-top:2px;}
+.admin-card-actions{display:flex;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);}
+
+/* ══ HELP / MANUAL PAGE ══ */
+.help-section{margin-bottom:28px;}
+.help-section-title{font-size:15px;font-weight:800;color:var(--fg);margin-bottom:12px;display:flex;align-items:center;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--border);}
+.help-step-list{display:flex;flex-direction:column;gap:10px;}
+.help-step{display:flex;gap:14px;align-items:flex-start;padding:14px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;transition:border-color .2s;}
+.help-step:hover{border-color:var(--border-hi);}
+.help-step-num{width:28px;height:28px;border-radius:8px;background:var(--grad-h);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;flex-shrink:0;margin-top:1px;}
+.help-step-body{}
+.help-step-title{font-size:13px;font-weight:700;color:var(--fg);margin-bottom:3px;}
+.help-step-desc{font-size:12px;color:var(--muted);line-height:1.65;}
+.help-step-tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;margin-left:6px;}
+.help-faq-list{display:flex;flex-direction:column;gap:8px;}
+.help-faq{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.help-faq-q{padding:12px 16px;font-size:13px;font-weight:700;color:var(--fg);cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:background .15s;}
+.help-faq-q:hover{background:var(--card-hi);}
+.help-faq-a{padding:0 16px 14px;font-size:12px;color:var(--muted);line-height:1.7;display:none;}
+.help-faq-a.open{display:block;}
+.help-contact-bar{display:flex;align-items:center;gap:12px;padding:16px 20px;background:linear-gradient(135deg,rgba(34,102,255,.08),rgba(0,229,209,.04));border:1px solid rgba(34,102,255,.2);border-radius:12px;margin-top:16px;}
+
+/* ══ IW MODAL ══ */
+#import-worker-modal{position:fixed;inset:0;z-index:1500;background:rgba(0,22,31,.9);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;}
+#import-worker-modal.hidden{display:none;}
+.iw-box{background:var(--bg-card);border:1px solid var(--border-hi);border-radius:20px;width:100%;max-width:740px;max-height:92vh;overflow-y:auto;animation:modal-in .3s cubic-bezier(.34,1.56,.64,1);}
+.iw-head{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg-card);z-index:2;border-radius:20px 20px 0 0;}
+.iw-head-left{display:flex;align-items:center;gap:14px;}
+.iw-head-icon{width:42px;height:42px;border-radius:11px;background:var(--grad);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 12px rgba(34,102,255,.35);}
+.iw-head-title{font-size:16px;font-weight:800;color:var(--fg);}
+.iw-head-sub{font-size:11px;color:var(--muted);margin-top:2px;}
+.iw-close{width:32px;height:32px;border-radius:9px;background:var(--card);border:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all .2s;}
+.iw-close:hover{background:var(--card-hi);color:var(--fg);}
+.iw-body{padding:24px;}
+.iw-mode-row{display:flex;gap:10px;margin-bottom:16px;}
+.iw-mode-btn{flex:1;padding:12px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid;font-family:'Sarabun',sans-serif;transition:all .2s;text-align:center;}
+.iw-mode-btn.active-all{background:rgba(34,102,255,.12);border-color:rgba(34,102,255,.4);color:#93c5fd;}
+.iw-mode-btn.active-skip{background:rgba(0,229,209,.1);border-color:rgba(0,229,209,.3);color:var(--teal);}
+.iw-mode-btn.inactive{background:transparent;border-color:var(--border);color:var(--muted);}
+.iw-mode-info{padding:10px 14px;border-radius:8px;font-size:11px;line-height:1.65;margin-bottom:14px;}
+.iw-mode-info.all{background:rgba(34,102,255,.06);border:1px solid rgba(34,102,255,.2);color:#93c5fd;}
+.iw-mode-info.skip{background:rgba(0,229,209,.06);border:1px solid rgba(0,229,209,.2);color:var(--teal);}
+.iw-resume{padding:12px 16px;background:rgba(0,229,209,.06);border:1px solid rgba(0,229,209,.25);border-radius:10px;margin-bottom:14px;display:none;align-items:center;gap:12px;}
+.iw-resume.show{display:flex;}
+.iw-resume-num{font-size:18px;font-weight:900;color:var(--teal);}
+.iw-upload{border:2px dashed var(--border);border-radius:12px;padding:28px 24px;text-align:center;background:rgba(0,22,31,.5);cursor:pointer;position:relative;transition:all .2s;}
+.iw-upload:hover,.iw-upload.drag{border-color:var(--wd-blue);background:rgba(34,102,255,.04);}
+.iw-upload input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.iw-upload-icon{width:44px;height:44px;background:rgba(34,102,255,.1);border:1px solid rgba(34,102,255,.2);border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;}
+.iw-upload-label{font-size:13px;font-weight:700;color:var(--fg);margin-bottom:4px;}
+.iw-upload-hint{font-size:11px;color:var(--muted);}
+.iw-file-info{display:flex;align-items:center;gap:12px;padding:11px 14px;background:rgba(34,102,255,.06);border:1px solid rgba(34,102,255,.2);border-radius:10px;margin-bottom:12px;}
+.iw-file-icon{width:34px;height:34px;background:rgba(34,102,255,.12);border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.iw-file-name{font-size:13px;font-weight:700;color:var(--fg);}
+.iw-file-meta{font-size:11px;color:var(--muted);margin-top:2px;}
+.iw-val-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;}
+.iw-val-card{padding:12px;border-radius:10px;text-align:center;}
+.iw-val-num{font-size:22px;font-weight:900;line-height:1;margin-bottom:3px;}
+.iw-val-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+.iw-val-ok{background:rgba(74,222,128,.06);border:1px solid rgba(74,222,128,.2);}
+.iw-val-ok .iw-val-num{color:var(--green);}.iw-val-ok .iw-val-label{color:rgba(74,222,128,.7);}
+.iw-val-upd{background:rgba(34,102,255,.06);border:1px solid rgba(34,102,255,.2);}
+.iw-val-upd .iw-val-num{color:#93c5fd;}.iw-val-upd .iw-val-label{color:rgba(147,197,253,.7);}
+.iw-val-skip{background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.2);}
+.iw-val-skip .iw-val-num{color:var(--amber);}.iw-val-skip .iw-val-label{color:rgba(251,191,36,.7);}
+.iw-val-total{background:rgba(100,116,139,.06);border:1px solid rgba(100,116,139,.2);}
+.iw-val-total .iw-val-num{color:var(--fg);}.iw-val-total .iw-val-label{color:var(--muted);}
+.iw-col-map{padding:8px 12px;background:rgba(0,229,209,.04);border:1px solid rgba(0,229,209,.15);border-radius:8px;font-size:11px;color:rgba(0,229,209,.8);margin-bottom:12px;line-height:1.7;}
+.iw-col-warn{padding:8px 12px;background:rgba(251,191,36,.04);border:1px solid rgba(251,191,36,.2);border-radius:8px;font-size:11px;color:var(--amber);margin-bottom:12px;line-height:1.7;display:none;}
+.iw-tbl-wrap{border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px;}
+.iw-tbl-bar{background:rgba(0,22,31,.6);padding:9px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);}
+.iw-tbl-bar span{font-size:11px;font-weight:700;color:var(--fg);}
+.iw-tbl-scroll{overflow-x:auto;max-height:200px;overflow-y:auto;}
+.iw-tbl-scroll table{font-size:11px;}
+.iw-tbl-scroll thead th{background:#000d14;font-size:9px;}
+.iw-prog-wrap{display:none;margin-bottom:12px;}
+.iw-prog-wrap.show{display:block;}
+.iw-prog-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;}
+.iw-prog-label{font-size:12px;font-weight:700;color:var(--fg);}
+.iw-prog-pct{font-size:12px;font-weight:800;color:var(--wd-blue);}
+.iw-prog-bg{height:8px;background:var(--border);border-radius:4px;overflow:hidden;}
+.iw-prog-fill{height:100%;background:var(--grad-h);border-radius:4px;transition:width .2s ease;width:0%;}
+.iw-prog-detail{font-size:11px;color:var(--muted);margin-top:5px;}
+.iw-batch-log{max-height:100px;overflow-y:auto;margin-top:8px;display:flex;flex-direction:column;gap:3px;}
+.iw-batch-line{font-size:11px;padding:3px 10px;border-radius:6px;display:flex;align-items:center;gap:7px;}
+.iw-batch-line.ok{background:rgba(74,222,128,.06);color:var(--green);}
+.iw-batch-line.err{background:rgba(248,113,113,.06);color:var(--red);}
+.iw-result{padding:11px 14px;border-radius:9px;font-size:12px;font-weight:700;margin-top:12px;display:none;align-items:center;gap:8px;}
+.iw-result.ok{background:rgba(74,222,128,.08);color:var(--green);border:1px solid rgba(74,222,128,.2);display:flex;}
+.iw-result.err{background:rgba(248,113,113,.08);color:var(--red);border:1px solid rgba(248,113,113,.2);display:flex;}
+.iw-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap;position:sticky;bottom:0;background:var(--bg-card);border-radius:0 0 20px 20px;}
+.iw-spin{width:13px;height:13px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
+.page.active .stat-card{animation:fadeUp .4s ease both;}
+.page.active .stat-card:nth-child(1){animation-delay:.05s;}.page.active .stat-card:nth-child(2){animation-delay:.1s;}.page.active .stat-card:nth-child(3){animation-delay:.15s;}.page.active .stat-card:nth-child(4){animation-delay:.2s;}
+</style>
+</head>
+<body>
+
+<!-- SETUP -->
+<div id="setup-screen">
+  <div class="auth-box" style="max-width:540px;">
+    <div class="auth-logo">🔥</div>
+    <div class="auth-title">เชื่อมต่อระบบ</div>
+    <div class="auth-sub">กรอกข้อมูลการเชื่อมต่อเพื่อเริ่มใช้งานครั้งแรก</div>
+    <div class="setup-grid">
+      <div class="field"><label>API Key</label><input id="cfg-apikey" placeholder="AIzaSy..."></div>
+      <div class="field"><label>Auth Domain</label><input id="cfg-authdomain" placeholder="project.firebaseapp.com"></div>
+      <div class="field"><label>Project ID</label><input id="cfg-projectid" placeholder="your-project-id"></div>
+      <div class="field"><label>Storage Bucket</label><input id="cfg-storagebucket" placeholder="project.appspot.com"></div>
+      <div class="field"><label>Messaging Sender ID</label><input id="cfg-senderid" placeholder="123456789"></div>
+      <div class="field"><label>App ID</label><input id="cfg-appid" placeholder="1:xxx:web:xxx"></div>
+    </div>
+    <div id="setup-err" class="auth-err"></div>
+    <button class="btn-grad" onclick="saveAndConnect()">เชื่อมต่อระบบ</button>
+    <button class="btn-demo" onclick="startDemo()">🧪 Mode</button>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div id="login-screen" class="hidden">
+  <div class="auth-box" style="max-width:420px;">
+    <div class="auth-logo">🛡️</div>
+    <div class="auth-title">Admin Portal</div>
+    <div class="auth-sub">เข้าสู่ระบบด้วยบัญชี Admin</div>
+    <div class="auth-role-badge">🔑 ADMIN ACCESS ONLY</div>
+    <div class="auth-checking" id="login-checking"><div class="spin"></div><span id="login-checking-text">กำลังตรวจสอบ...</span></div>
+    <div class="auth-err" id="login-err"></div>
+    <div id="login-form-fields">
+      <div class="field"><label>อีเมล Admin</label><input type="email" id="login-email" placeholder="admin@company.com" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="field"><label>รหัสผ่าน</label><input type="password" id="login-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <button class="btn-grad" id="login-btn" onclick="doLogin()">เข้าสู่ระบบ</button>
+      <div class="auth-divider">หรือ</div>
+      <button class="btn-demo" onclick="doGoogleLogin()" style="display:flex;align-items:center;justify-content:center;gap:8px;">
+        <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.34-8.16 2.34-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Login ด้วย Google
+      </button>
+    </div>
+    <div style="margin-top:16px;text-align:center;"><button onclick="resetConfig()" style="background:none;border:none;color:var(--dim);font-size:11px;cursor:pointer;font-family:'Sarabun',sans-serif;text-decoration:underline;">⚙️ เปลี่ยนการตั้งค่าการเชื่อมต่อ</button></div>
+  </div>
+</div>
+
+<!-- SIDEBAR -->
+<nav id="sidebar">
+  <div class="sb-brand">
+    <div class="sb-brand-icon">🛡️</div>
+    <div class="sb-brand-text"><div class="sb-brand-title">Access Control</div><div class="sb-brand-sub">Admin Portal</div></div>
+  </div>
+  <button class="sb-toggle" onclick="toggleSidebar()">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <div class="sb-nav">
+
+    <!-- กลุ่ม: ภาพรวม -->
+    <div class="sb-group">
+      <div class="sb-group-label">ภาพรวม</div>
+      <div class="sb-item active" id="nav-dashboard" onclick="switchTab('dashboard')">
+        <div class="sb-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
+        <span class="sb-item-label">Dashboard</span>
+        <div class="sb-tooltip">Dashboard</div>
+      </div>
+    </div>
+
+    <!-- กลุ่ม: จัดการผู้ใช้และสิทธิ์ -->
+    <div class="sb-group">
+      <div class="sb-group-label">จัดการผู้ใช้และสิทธิ์</div>
+
+      <!-- Admin Rights -->
+      <div class="sb-item" id="nav-admin" onclick="switchTab('admin')">
+        <div class="sb-icon" style="background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.2);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <span class="sb-item-label" style="color:#c4b5fd;">สิทธิ์ Admin</span>
+        <div class="sb-tooltip">สิทธิ์ Admin</div>
+      </div>
+
+      <!-- Guard Users -->
+      <div class="sb-item" id="nav-users" onclick="switchTab('users')">
+        <div class="sb-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <span class="sb-item-label">Guard Users</span>
+        <div class="sb-tooltip">Guard Users</div>
+      </div>
+
+      <!-- พนักงาน -->
+      <div class="sb-item" id="nav-employees" onclick="switchTab('employees')">
+        <div class="sb-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.58-7 8-7s8 3 8 7"/></svg></div>
+        <span class="sb-item-label">แก้ไขพนักงานพนักงาน</span>
+        <div class="sb-tooltip">พนักงาน</div>
+      </div>
+
+      <!-- Import พนักงาน -->
+      <div class="sb-item" id="nav-import" onclick="openImportWorkerModal()" style="border-left-color:transparent;">
+        <div class="sb-icon" style="background:rgba(0,229,209,.08);border:1px solid rgba(0,229,209,.2);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00E5D1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <span class="sb-item-label" style="color:var(--teal);">เพิ่มข้อมูลพนักงาน</span>
+        <div class="sb-tooltip">เพิ่มข้อมูลพนักงาน</div>
+      </div>
+
+      <!-- จุดทางเข้า -->
+      <div class="sb-item" id="nav-entrances" onclick="switchTab('entrances')">
+        <div class="sb-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7"/><polyline points="17 8 21 12 17 16"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
+        <span class="sb-item-label">จุดทางเข้า</span>
+        <div class="sb-tooltip">จุดทางเข้า</div>
+      </div>
+    </div>
+
+    <!-- กลุ่ม: รายงาน -->
+    <div class="sb-group">
+      <div class="sb-group-label">รายงาน</div>
+      <div class="sb-item" id="nav-logs" onclick="switchTab('logs')">
+        <div class="sb-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+        <span class="sb-item-label">Log ทั้งหมด</span>
+        <span class="sb-item-badge" id="sb-log-badge" style="display:none;">0</span>
+        <div class="sb-tooltip">Log ทั้งหมด</div>
+      </div>
+    </div>
+
+    <!-- กลุ่ม: ช่วยเหลือ -->
+    <div class="sb-group">
+      <div class="sb-group-label">ช่วยเหลือ</div>
+      <div class="sb-item" id="nav-help" onclick="switchTab('help')">
+        <div class="sb-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+        <span class="sb-item-label">วิธีใช้งาน</span>
+        <div class="sb-tooltip">วิธีใช้งาน</div>
+      </div>
+    </div>
+
+  </div>
+  <div class="sb-bottom">
+    <div class="sb-sync"><div class="sync-dot pending" id="sync-dot"></div><span class="sb-sync-label" id="sync-label">Connecting...</span></div>
+    <div class="sb-user">
+      <div class="sb-avatar" id="sb-avatar-char">A</div>
+      <div class="sb-user-info"><div class="sb-user-name" id="sb-user-name">—</div><div class="sb-user-role">Admin</div></div>
+      <button class="sb-logout" onclick="confirmLogout()" title="ออกจากระบบ">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- APP SHELL -->
+<div id="app-shell">
+  <div id="topbar">
+    <div><div class="topbar-page-title" id="topbar-page-title">Dashboard</div><div class="topbar-page-sub" id="topbar-page-sub">ภาพรวมระบบ</div></div>
+    <div class="topbar-right"><span class="topbar-user" id="topbar-user-email"></span><span id="mode-badge" style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:rgba(34,102,255,.1);border:1px solid rgba(34,102,255,.2);color:#93c5fd;display:none;">Demo</span></div>
+  </div>
+
+  <main id="main-app" style="display:none;">
+
+    <!-- DASHBOARD -->
+    <div id="tab-content-dashboard" class="page active">
+      <div class="page-header"><div class="page-header-title">ภาพรวมระบบ</div><div class="page-header-sub">สถิติการเข้า-ออกพื้นที่แบบ Realtime</div><div class="page-header-bar"></div></div>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-num blue" id="stat-emp">—</div><div class="stat-label">พนักงานในระบบ</div><div class="stat-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.58-7 8-7s8 3 8 7"/></svg></div></div>
+        <div class="stat-card"><div class="stat-num green" id="stat-today-ok">—</div><div class="stat-label">ผ่านเข้าทั้งหมด</div><div class="stat-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="1.2"><polyline points="20 6 9 17 4 12"/></svg></div></div>
+        <div class="stat-card"><div class="stat-num red" id="stat-today-deny">—</div><div class="stat-label">ปฏิเสธทั้งหมด</div><div class="stat-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="1.2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div></div>
+        <div class="stat-card"><div class="stat-num amber" id="stat-gates">—</div><div class="stat-label">จุดทางเข้าที่เปิดใช้</div><div class="stat-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="1.2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div></div>
+      </div>
+      <div class="three-col">
+        <div class="card" style="grid-column:span 2;"><div class="card-header"><div><div class="section-title">Log ล่าสุด (20 รายการ)</div><div class="section-sub">การสแกนล่าสุด</div></div></div><div class="tbl-wrap"><div style="overflow-x:auto;"><table><thead><tr><th>เวลา</th><th>จุดทางเข้า</th><th>สถานะ</th><th>Emp ID</th><th>ชื่อ</th><th>แผนก</th><th>Site</th></tr></thead><tbody id="dash-log-tbody"></tbody></table></div></div></div>
+        <div class="card"><div class="section-title" style="margin-bottom:12px;">สถิติจุดทางเข้า</div><div id="dash-gate-stats" style="display:flex;flex-direction:column;gap:10px;"></div></div>
+      </div>
+    </div>
+
+    <!-- ADMIN RIGHTS PAGE -->
+    <div id="tab-content-admin" class="page">
+      <div class="page-header">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div><div class="page-header-title">จัดการสิทธิ์ Admin</div><div class="page-header-sub">เพิ่ม แก้ไข ระดับสิทธิ์ผู้ดูแลระบบ</div><div class="page-header-bar"></div></div>
+        </div>
+      </div>
+
+      <!-- Warning bar -->
+      <div class="admin-warn-bar" style="margin-bottom:20px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div class="admin-warn-bar-text">
+          <strong>ข้อควรระวัง:</strong> การมอบสิทธิ์ Admin ให้ผู้อื่นมีผลเต็มรูปแบบ — ผู้ที่ได้รับสิทธิ์สามารถจัดการข้อมูลทุกส่วนได้ทันที
+          รวมถึงการลบข้อมูลพนักงาน / Log / จุดทางเข้า <strong>กรุณาตรวจสอบข้อมูลก่อนทุกครั้ง</strong>
+        </div>
+      </div>
+
+      <!-- Add Admin Form -->
+      <div class="admin-form-card">
+        <div class="guard-form-header">
+          <div>
+            <div class="guard-form-title" style="color:#c4b5fd;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:middle;margin-right:6px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              เพิ่ม Admin ใหม่
+            </div>
+            <div class="guard-form-sub">เพิ่มบัญชีผู้ดูแลระบบ — สามารถเข้าถึง Admin Portal ได้</div>
+          </div>
+          <div class="guard-form-actions">
+            <button class="btn btn-purple" onclick="createAdminUser()" style="display:flex;align-items:center;gap:7px;padding:10px 22px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              มอบสิทธิ์ Admin
+            </button>
+            <div id="admin-form-status" class="status-msg" style="margin-top:0;"></div>
+          </div>
+        </div>
+        <div class="section-label">ข้อมูลบัญชี</div>
+        <div class="form-row cols-6">
+          <div class="form-field" style="grid-column:span 2;">
+            <label>อีเมล *</label>
+            <input type="email" id="admin-email" placeholder="admin2@company.com">
+          </div>
+          <div class="form-field" style="grid-column:span 2;">
+            <label>ชื่อ-สกุล</label>
+            <input type="text" id="admin-name" placeholder="ชื่อผู้ดูแลระบบ">
+          </div>
+          <div class="form-field">
+            <label>รหัสผ่านเริ่มต้น *</label>
+            <input type="password" id="admin-pass" placeholder="อย่างน้อย 8 ตัวอักษร">
+          </div>
+          <div class="form-field">
+            <label>ระดับสิทธิ์</label>
+            <select id="admin-level">
+              <option value="admin">Admin — จัดการทุกส่วน</option>
+              <option value="viewer">Viewer — ดูข้อมูลเท่านั้น</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Admin List -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="section-title">ผู้ดูแลระบบทั้งหมด</div>
+            <div class="section-sub" style="margin-bottom:0;">คลิก ✏️ เพื่อแก้ไขสิทธิ์</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input id="admin-search" placeholder="ค้นหาชื่อ / อีเมล..." oninput="filterAdminList()" style="padding:8px 12px;background:var(--wd-navy);border:1px solid var(--border);border-radius:8px;color:var(--fg);font-size:12px;font-family:'Sarabun',sans-serif;outline:none;min-width:220px;">
+          </div>
+        </div>
+        <div class="admin-list-grid" id="admin-list"></div>
+      </div>
+    </div>
+
+    <!-- EMPLOYEES -->
+    <div id="tab-content-employees" class="page">
+      <div class="page-header">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div><div class="page-header-title">จัดการพนักงาน</div><div class="page-header-sub">เพิ่ม แก้ไข ข้อมูลพนักงานในระบบ</div><div class="page-header-bar"></div></div>
+          <div class="btn-row" style="display:none;">
+            <button class="btn btn-teal" onclick="openImportWorkerModal()" style="display:flex;align-items:center;gap:7px;padding:10px 18px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              เพิ่มข้อมูลพนักงาน (Import)
+            </button>
+            <button class="btn btn-secondary" onclick="exportEmpCSV()" style="display:flex;align-items:center;gap:7px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export CSV
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="emp-form-full">
+        <div class="emp-search-inline">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="emp-search-edit" placeholder="ค้นหาด้วย Emp ID, Badge ID หรือชื่อ แล้วกด Enter เพื่อโหลดข้อมูลเข้าฟอร์ม..." onkeydown="if(event.key==='Enter')searchEmployeeToEdit()">
+          <button onclick="searchEmployeeToEdit()">ค้นหา</button>
+        </div>
+        <div class="emp-form-header">
+          <div>
+            <div class="emp-form-title" id="emp-form-title">➕ แก้ไขพนักงานข้อมูลพนักงาน</div>
+            <div class="emp-form-sub" id="emp-form-sub">Document ID = empId · บันทึกลงระบบทันที</div>
+          </div>
+          <div class="emp-form-actions">
+            <button class="btn btn-primary" onclick="saveEmployee()" style="display:flex;align-items:center;gap:6px;padding:10px 22px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              บันทึก
+            </button>
+            <button class="btn btn-amber" onclick="deleteEmployee()">🗑️ ลบ</button>
+            <button class="btn btn-secondary" onclick="clearEmpForm()">เคลียร์</button>
+            <div id="emp-form-status" class="status-msg" style="margin-top:0;"></div>
+          </div>
+        </div>
+        <div class="section-label">ข้อมูลประจำตัว</div>
+        <div class="form-row cols-6">
+          <div class="form-field"><label>Emp ID *</label><input type="text" id="f-empid" class="mono" placeholder="1000180969"></div>
+          <div class="form-field"><label>Badge ID</label><input type="text" id="f-badgeid" class="mono" placeholder="0012871027"></div>
+          <div class="form-field" style="grid-column:span 2;"><label>Name (English)</label><input type="text" id="f-nameen" placeholder="ADISAK MUNGKALAKUL"></div>
+          <div class="form-field" style="grid-column:span 2;"><label>ชื่อ (ภาษาไทย)</label><input type="text" id="f-nameth" placeholder="อดิศักดิ์ มังคละกุล"></div>
+        </div>
+        <div class="divider-line"></div>
+        <div class="section-label">ข้อมูลองค์กร</div>
+        <div class="form-row cols-6">
+          <div class="form-field"><label>Site</label><select id="f-site"><option value="PRB">PRB (PrachinBuri)</option><option value="BPI">BPI (BangPa-In)</option><option value="HO">HO (Head Office)</option><option value="">Other</option></select></div>
+          <div class="form-field"><label>Cloud Site</label><input type="text" id="f-cloudsite" placeholder="034 BangPa-In"></div>
+          <div class="form-field" style="grid-column:span 2;"><label>Department</label><input type="text" id="f-dept" placeholder="REO - Security (Mfg)"></div>
+          <div class="form-field"><label>Division</label><input type="text" id="f-division" placeholder="-"></div>
+          <div class="form-field"><label>Title</label><input type="text" id="f-title" placeholder="Security Coordinator"></div>
+        </div>
+        <div class="form-row cols-3">
+          <div class="form-field"><label>Track</label><select id="f-track"><option value="Management">Management</option><option value="Individual Contributor">Individual Contributor</option><option value="Technical">Technical</option><option value="-">-</option></select></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="section-title">รายชื่อพนักงานทั้งหมด</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span style="font-size:11px;color:var(--muted);">ทั้งหมด <strong style="color:var(--fg);" id="emp-total-mini">—</strong></span>
+            <span style="font-size:11px;color:#93c5fd;">PRB <strong id="emp-prb-mini">—</strong></span>
+            <span style="font-size:11px;color:var(--teal);">BPI <strong id="emp-bpi-mini">—</strong></span>
+            <span style="font-size:11px;color:var(--amber);">HO <strong id="emp-ho-mini">—</strong></span>
+          </div>
+        </div>
+        <div class="search-bar">
+          <input id="emp-search" placeholder="ค้นหา Emp ID / ชื่อ / Badge ID / แผนก..." oninput="filterEmployees()">
+          <select id="emp-filter-site" onchange="filterEmployees()"><option value="">ทุก Site</option><option value="PRB">PRB</option><option value="BPI">BPI</option><option value="HO">HO</option></select>
+          <select id="emp-filter-track" onchange="filterEmployees()"><option value="">ทุก Track</option><option value="Management">Management</option><option value="Individual Contributor">Individual Contributor</option><option value="Technical">Technical</option></select>
+        </div>
+        <div class="tbl-wrap">
+          <div class="tbl-head"><span class="tbl-head-title">รายชื่อพนักงาน</span><span class="count-pill" id="emp-count">0</span></div>
+          <div style="overflow-x:auto;"><table><thead><tr><th>Emp ID</th><th>Badge ID</th><th>Name (EN)</th><th>ชื่อ (TH)</th><th>Site</th><th>Cloud Site</th><th>Department</th><th>Title</th><th>Track</th><th>จัดการ</th></tr></thead><tbody id="emp-tbody"></tbody></table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ENTRANCES -->
+    <div id="tab-content-entrances" class="page">
+      <div class="page-header"><div class="page-header-title">จุดทางเข้า</div><div class="page-header-sub">บริหารจัดการจุดทางเข้าและสถิติ Realtime</div><div class="page-header-bar"></div></div>
+      <div style="display:grid;grid-template-columns:380px 1fr;gap:20px;">
+        <div class="card">
+          <div class="section-title" id="ent-form-title" style="margin-bottom:4px;">➕ เพิ่มจุดทางเข้าใหม่</div><div class="section-sub">ข้อมูลซิงค์ไปยัง Guard Terminal ทันที</div>
+          <div class="form-row cols-2" style="margin-top:12px;"><div class="form-field"><label>ชื่อ *</label><input type="text" id="ent-name" placeholder="Main Entrance Phase 1"></div><div class="form-field"><label>Zone</label><input type="text" id="ent-zone" placeholder="Zone A"></div></div>
+          <div class="form-row" style="grid-template-columns:1fr;"><div class="form-field"><label>หมายเหตุ</label><input type="text" id="ent-desc" placeholder="รายละเอียด"></div></div>
+          <div class="form-row cols-2"><div class="form-field"><label>Site</label><select id="ent-site"><option value="PRB">PRB</option><option value="BPI">BPI</option><option value="ALL">ALL</option></select></div><div class="form-field"><label>สถานะ</label><select id="ent-status"><option value="active">● Active</option><option value="inactive">○ Inactive</option></select></div></div>
+          <div class="form-row" style="grid-template-columns:1fr;"><div class="form-field"><label>ลำดับ</label><input type="number" id="ent-order" placeholder="1" min="1"></div></div>
+          <div class="btn-row" style="margin-top:14px;"><button class="btn btn-primary" onclick="saveEntrance()" style="flex:1;">💾 บันทึก</button><button class="btn btn-secondary" onclick="clearEntForm()">เคลียร์</button></div>
+          <div id="ent-form-status" class="status-msg"></div>
+        </div>
+        <div><div class="section-title" style="margin-bottom:4px;">จุดทางเข้าทั้งหมด</div><div class="section-sub">คลิกเพื่อแก้ไข</div><div class="entrance-grid" id="entrance-grid-admin"></div></div>
+      </div>
+    </div>
+
+    <!-- GUARD USERS -->
+    <div id="tab-content-users" class="page">
+      <div class="page-header">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div><div class="page-header-title">Guard Users</div><div class="page-header-sub">จัดการบัญชีเจ้าหน้าที่รักษาความปลอดภัย</div><div class="page-header-bar"></div></div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:12px;color:var(--muted);">Guard ทั้งหมด <strong style="color:var(--fg);" id="guard-total-count">—</strong></span>
+            <span class="pill pill-green" id="guard-active-badge">Active: —</span>
+          </div>
+        </div>
+      </div>
+      <div class="guard-form-card">
+        <div class="guard-form-header">
+          <div><div class="guard-form-title">🔑 เพิ่ม Guard User ใหม่</div><div class="guard-form-sub">สร้างบัญชีเจ้าหน้าที่รักษาความปลอดภัย</div></div>
+          <div class="guard-form-actions">
+            <button class="btn btn-primary" onclick="createGuardUser()" style="display:flex;align-items:center;gap:7px;padding:10px 22px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              สร้าง Guard Account
+            </button>
+            <div id="guard-form-status" class="status-msg" style="margin-top:0;"></div>
+          </div>
+        </div>
+        <div class="section-label">ข้อมูลบัญชี</div>
+        <div class="form-row cols-6">
+          <div class="form-field" style="grid-column:span 2;"><label>อีเมล Guard *</label><input type="email" id="guard-email" placeholder="guard01@company.com"></div>
+          <div class="form-field" style="grid-column:span 2;"><label>ชื่อ Guard</label><input type="text" id="guard-name" placeholder="ชื่อเจ้าหน้าที่รักษาความปลอดภัย"></div>
+          <div class="form-field"><label>รหัสผ่าน *</label><input type="password" id="guard-pass" placeholder="อย่างน้อย 6 ตัวอักษร"></div>
+          <div class="form-field"><label>จุดทางเข้า</label><select id="guard-entrance"><option value="">— ทุกจุด —</option></select></div>
+        </div>
+        <div class="divider-line"></div>
+        <div class="section-label">สิทธิ์และการตั้งค่า</div>
+        <div class="form-row cols-6">
+          <div class="form-field"><label>Role</label><select id="guard-role"><option value="guard">🛡️ Guard</option><option value="supervisor">⭐ Supervisor</option></select></div>
+          <div class="form-field"><label>สถานะ</label><select id="guard-active"><option value="true">✅ Active</option><option value="false">❌ Inactive</option></select></div>
+          <div class="form-field" style="grid-column:span 4;display:flex;align-items:flex-end;">
+            <div class="guard-info-bar" style="width:100%;margin-top:0;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r=".5" fill="#fbbf24"/></svg>
+              <span>Guard สามารถ Login ได้เฉพาะที่ <strong>guard.html</strong> เท่านั้น — ไม่สามารถเข้าสู่ Admin Portal ได้</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div><div class="section-title">Guard Users ทั้งหมด</div><div class="section-sub" style="margin-bottom:0;">คลิก ✏️ เพื่อแก้ไขสิทธิ์และข้อมูล</div></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <div class="search-bar" style="margin-bottom:0;">
+              <input id="guard-search" placeholder="ค้นหาชื่อ / อีเมล..." oninput="filterGuardList()" style="min-width:220px;">
+              <select id="guard-filter-role" onchange="filterGuardList()"><option value="">ทุก Role</option><option value="guard">Guard</option><option value="supervisor">Supervisor</option></select>
+              <select id="guard-filter-status" onchange="filterGuardList()"><option value="">ทุกสถานะ</option><option value="true">Active</option><option value="false">Inactive</option></select>
+            </div>
+          </div>
+        </div>
+        <div class="guard-list-grid" id="guard-list"></div>
+      </div>
+    </div>
+
+    <!-- LOGS -->
+    <div id="tab-content-logs" class="page">
+      <div class="page-header"><div class="page-header-title">Log ทั้งหมด</div><div class="page-header-sub">ประวัติการเข้า-ออกพื้นที่แบบ Realtime</div><div class="page-header-bar"></div></div>
+      <div class="date-filter-section">
+        <div class="date-filter-header"><div class="date-filter-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2266FF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span>ตัวเลือกวันที่</span><span id="date-active-badge" class="date-active-badge" style="display:none;">✓ กำลังกรอง</span></div><button class="btn btn-secondary" onclick="clearDateFilter()" style="font-size:11px;padding:6px 12px;">× ล้าง</button></div>
+        <div class="quick-date-row"><button class="quick-btn" id="qbtn-today" onclick="setQuickDate('today')">วันนี้</button><button class="quick-btn" id="qbtn-yesterday" onclick="setQuickDate('yesterday')">เมื่อวาน</button><button class="quick-btn" id="qbtn-7d" onclick="setQuickDate('7d')">7 วันล่าสุด</button><button class="quick-btn" id="qbtn-30d" onclick="setQuickDate('30d')">30 วันล่าสุด</button><button class="quick-btn" id="qbtn-thismonth" onclick="setQuickDate('thismonth')">เดือนนี้</button><button class="quick-btn" id="qbtn-lastmonth" onclick="setQuickDate('lastmonth')">เดือนที่แล้ว</button><button class="quick-btn active-quick" id="qbtn-all" onclick="setQuickDate('all')">ทั้งหมด</button></div>
+        <div class="date-range-row">
+          <div class="date-field"><label>วันที่เริ่มต้น</label><input type="date" id="log-date-from" onchange="onDateInputChange()"></div>
+          <div class="date-field"><label>วันที่สิ้นสุด</label><input type="date" id="log-date-to" onchange="onDateInputChange()"></div>
+          <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" onclick="applyDateFilter()" style="padding:10px 18px;">🔍 ค้นหา</button></div>
+          <div style="display:flex;align-items:flex-end;"><button class="btn btn-secondary" onclick="clearDateFilter()" style="padding:10px 14px;">ล้าง</button></div>
+        </div>
+        <div class="date-summary-bar hidden" id="date-summary-bar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2266FF" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span id="date-summary-text">—</span><span class="date-result-count" id="date-result-count">0</span></div>
+      </div>
+      <div class="card" style="margin-bottom:14px;">
+        <div class="card-header"><div class="section-title">ประวัติการเข้าพื้นที่</div><div class="btn-row"><button class="btn btn-pdf" onclick="openPdfPreview()" style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>PDF</button><button class="btn btn-secondary" onclick="exportLogCSV()">📄 CSV</button><button class="btn btn-danger" onclick="clearAllLogs()">🗑️ ล้าง</button></div></div>
+        <div id="debug-strip" class="debug-strip" style="display:none;"></div>
+        <div class="filter-bar">
+          <div class="form-field"><label>ค้นหา</label><input id="log-search" placeholder="ชื่อ / Emp ID / Badge ID..." oninput="runFilter()"></div>
+          <div class="form-field"><label>จุดทางเข้า</label><select id="log-filter-entrance" onchange="runFilter()"><option value="">ทั้งหมด</option></select></div>
+          <div class="form-field"><label>สถานะ</label><select id="log-filter-status" onchange="runFilter()"><option value="">ทั้งหมด</option><option value="allowed">✅ Granted</option><option value="denied">❌ Denied</option></select></div>
+          <div class="form-field" style="display:flex;align-items:flex-end;"><button class="btn btn-secondary" onclick="resetLogFilters()">รีเซ็ต</button></div>
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <div class="tbl-head"><span class="tbl-head-title">รายการทั้งหมด</span><div style="display:flex;align-items:center;gap:8px;"><span id="log-date-range-label" style="font-size:10px;color:var(--muted);"></span><span class="count-pill" id="log-count">0</span></div></div>
+        <div style="overflow-x:auto;"><table><thead><tr><th><input type="checkbox" id="chk-all" onchange="toggleAllLogs(this)"></th><th>วันเวลา</th><th>จุดทางเข้า</th><th>สถานะ</th><th>Emp ID</th><th>Badge ID</th><th>Name (EN)</th><th>ชื่อ TH</th><th>Site</th><th>Department</th><th>Title</th><th>Guard</th></tr></thead><tbody id="log-tbody"></tbody></table></div>
+      </div>
+    </div>
+
+    <!-- HELP / MANUAL PAGE -->
+    <div id="tab-content-help" class="page">
+      <div class="page-header"><div class="page-header-title">วิธีใช้งาน</div><div class="page-header-sub">คู่มือการใช้งานระบบ Building Access Control</div><div class="page-header-bar"></div></div>
+
+      <!-- เริ่มต้นใช้งาน -->
+      <div class="help-section">
+        <div class="help-section-title">
+          <div style="width:32px;height:32px;border-radius:9px;background:var(--grad-h);display:flex;align-items:center;justify-content:center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          </div>
+          เริ่มต้นใช้งานระบบ
+        </div>
+        <div class="help-step-list">
+          <div class="help-step">
+            <div class="help-step-num">1</div>
+            <div class="help-step-body">
+              <div class="help-step-title">ตั้งค่าจุดทางเข้า</div>
+              <div class="help-step-desc">ไปที่เมนู <strong>จุดทางเข้า</strong> แล้วเพิ่มจุดทางเข้าที่ต้องการควบคุม เช่น "Main Entrance Phase 1" พร้อมระบุ Zone และ Site ระบบจะซิงค์ไปยัง Guard Terminal โดยอัตโนมัติ</div>
+            </div>
+          </div>
+          <div class="help-step">
+            <div class="help-step-num">2</div>
+            <div class="help-step-body">
+              <div class="help-step-title">นำเข้าข้อมูลพนักงาน</div>
+              <div class="help-step-desc">ใช้เมนู <strong>เพิ่มข้อมูลพนักงาน (Import)</strong> เพื่ออัปโหลดไฟล์ Excel รองรับ .xlsx .xls .csv ระบบจะตรวจจับ Column อัตโนมัติ และแสดงตัวอย่างก่อน Import</div>
+            </div>
+          </div>
+          <div class="help-step">
+            <div class="help-step-num">3</div>
+            <div class="help-step-body">
+              <div class="help-step-title">สร้างบัญชี Guard</div>
+              <div class="help-step-desc">ไปที่เมนู <strong>Guard Users</strong> แล้วสร้างบัญชีสำหรับเจ้าหน้าที่รักษาความปลอดภัย ระบุ Email, Password, จุดทางเข้าที่รับผิดชอบ Guard จะ Login ผ่านหน้า <strong>Guard Terminal</strong> แยกต่างหาก</div>
+            </div>
+          </div>
+          <div class="help-step">
+            <div class="help-step-num">4</div>
+            <div class="help-step-body">
+              <div class="help-step-title">เริ่มสแกนที่ Guard Terminal</div>
+              <div class="help-step-desc">Guard เปิดไฟล์ <strong>guard.html</strong> บนอุปกรณ์ที่จุดทางเข้า Login แล้วเลือกจุดทางเข้า จากนั้นสแกน Badge หรือพิมพ์ Emp ID — ระบบตอบสนองทันทีจาก Memory Cache</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- การจัดการสิทธิ์ -->
+      <div class="help-section">
+        <div class="help-section-title">
+          <div style="width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          การจัดการสิทธิ์
+        </div>
+        <div class="help-step-list">
+          <div class="help-step">
+            <div class="help-step-num" style="background:linear-gradient(135deg,#7c3aed,#a78bfa);">A</div>
+            <div class="help-step-body">
+              <div class="help-step-title">สิทธิ์ Admin <span class="help-step-tag pill-purple">Admin</span></div>
+              <div class="help-step-desc">ใช้เมนู <strong>สิทธิ์ Admin</strong> เพื่อเพิ่มผู้ดูแลระบบคนใหม่ Admin สามารถเข้าถึง Portal นี้ได้เต็มรูปแบบ ควรมอบสิทธิ์เฉพาะบุคคลที่ได้รับอนุญาตเท่านั้น</div>
+            </div>
+          </div>
+          <div class="help-step">
+            <div class="help-step-num" style="background:linear-gradient(135deg,#1d4ed8,#3b82f6);">G</div>
+            <div class="help-step-body">
+              <div class="help-step-title">สิทธิ์ Guard <span class="help-step-tag pill-blue">Guard</span></div>
+              <div class="help-step-desc">Guard สามารถ Login ได้เฉพาะ Guard Terminal (<strong>guard.html</strong>) เท่านั้น ไม่มีสิทธิ์เข้า Admin Portal และไม่สามารถแก้ไขข้อมูลระบบได้</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Log และรายงาน -->
+      <div class="help-section">
+        <div class="help-section-title">
+          <div style="width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#0369a1,#0ea5e9);display:flex;align-items:center;justify-content:center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          Log และรายงาน
+        </div>
+        <div class="help-step-list">
+          <div class="help-step">
+            <div class="help-step-num">1</div>
+            <div class="help-step-body">
+              <div class="help-step-title">กรองตามวันที่</div>
+              <div class="help-step-desc">ในหน้า <strong>Log ทั้งหมด</strong> ใช้ Quick Date Buttons (วันนี้ / 7 วัน / เดือนนี้) หรือกรอกช่วงวันที่เองเพื่อดูข้อมูลย้อนหลัง</div>
+            </div>
+          </div>
+          <div class="help-step">
+            <div class="help-step-num">2</div>
+            <div class="help-step-body">
+              <div class="help-step-title">Export รายงาน</div>
+              <div class="help-step-desc">กด <strong>PDF</strong> เพื่อพรีวิวและพิมพ์รายงาน A4 Landscape หรือกด <strong>CSV</strong> เพื่อดาวน์โหลดข้อมูลไปวิเคราะห์ต่อใน Excel — ข้อมูลที่ Export จะตรงกับ Filter ที่เลือกอยู่</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FAQ -->
+      <div class="help-section">
+        <div class="help-section-title">
+          <div style="width:32px;height:32px;border-radius:9px;background:var(--bg-card);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
+          คำถามที่พบบ่อย
+        </div>
+        <div class="help-faq-list">
+          <div class="help-faq"><div class="help-faq-q" onclick="toggleFaq(this)"><span>Guard Login ไม่ได้ ทำอย่างไร?</span><span>▾</span></div><div class="help-faq-a">ตรวจสอบว่า Guard ใช้ไฟล์ <strong>guard.html</strong> ไม่ใช่หน้า Admin Portal · ตรวจสอบสถานะ Account ในเมนู Guard Users ว่าเป็น Active · ตรวจสอบ Email และ Password ให้ถูกต้อง</div></div>
+          <div class="help-faq"><div class="help-faq-q" onclick="toggleFaq(this)"><span>สแกน Badge แล้วขึ้น "ไม่พบข้อมูล" ทั้งที่เป็นพนักงาน?</span><span>▾</span></div><div class="help-faq-a">Badge ID ในระบบอาจไม่ตรงกับที่สแกน · ตรวจสอบในหน้า <strong>พนักงาน</strong> ว่า Badge ID บันทึกถูกต้อง · ข้อมูลพนักงานอาจยังไม่ถูก Import เข้าระบบ</div></div>
+          <div class="help-faq"><div class="help-faq-q" onclick="toggleFaq(this)"><span>Import พนักงานแล้วข้อมูลหาย หรือไม่ครบ?</span><span>▾</span></div><div class="help-faq-a">ตรวจสอบว่าไฟล์ Excel มีคอลัมน์ที่ถูกต้อง เช่น "Emp - ID", "Badge-ID", "Name and Surname (EN)" · ดูผลการ Map Column ในหน้าต่าง Import ก่อนกด Confirm · ลอง Export CSV ดูเพื่อยืนยันข้อมูลในระบบ</div></div>
+          <div class="help-faq"><div class="help-faq-q" onclick="toggleFaq(this)"><span>จะเพิ่ม Admin คนใหม่ได้อย่างไร?</span><span>▾</span></div><div class="help-faq-a">ไปที่เมนู <strong>สิทธิ์ Admin</strong> แล้วกรอก Email, ชื่อ, Password เริ่มต้น และระดับสิทธิ์ กด "มอบสิทธิ์ Admin" — Admin ใหม่สามารถ Login เข้า Portal นี้ได้ทันที</div></div>
+          <div class="help-faq"><div class="help-faq-q" onclick="toggleFaq(this)"><span>สถานะ "ปฏิเสธ" ในรายงานหมายความว่าอะไร?</span><span>▾</span></div><div class="help-faq-a">Denied หมายความว่า Badge/Emp ID ที่สแกนไม่พบในฐานข้อมูลพนักงาน · Guard ยังคงบันทึก ID ที่สแกนไว้ใน Log เพื่อการตรวจสอบย้อนหลัง</div></div>
+        </div>
+        <div class="help-contact-bar">
+          <div style="width:36px;height:36px;border-radius:9px;background:rgba(34,102,255,.1);border:1px solid rgba(34,102,255,.2);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--fg);margin-bottom:2px;">ติดต่อผู้พัฒนาระบบ</div>
+            <div style="font-size:12px;color:var(--muted);">Saksri Kaewaudon · Security Coordinator · REO Security (Mfg) · Western Digital Thailand</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+  <footer id="main-footer">© 2026 Building Access Control · Admin Portal v1.1 | Created by: SaksriK.</footer>
+</div>
+
+<!-- GUARD MODAL -->
+<div id="guard-modal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-head"><div class="modal-head-title">✏️ แก้ไข Guard User</div><button class="modal-close" onclick="closeGuardModal()">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="modal-guard-uid">
+      <div class="form-row cols-2"><div class="form-field"><label>ชื่อ Guard</label><input type="text" id="modal-guard-name"></div><div class="form-field"><label>จุดทางเข้า</label><select id="modal-guard-entrance"></select></div></div>
+      <div class="form-row cols-2"><div class="form-field"><label>Role</label><select id="modal-guard-role"><option value="guard">🛡️ Guard</option><option value="supervisor">⭐ Supervisor</option></select></div><div class="form-field"><label>สถานะ</label><select id="modal-guard-active"><option value="true">✅ Active</option><option value="false">❌ Inactive</option></select></div></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-secondary" onclick="closeGuardModal()">ยกเลิก</button><button class="btn btn-primary" onclick="saveGuardEdit()">💾 บันทึก</button></div>
+  </div>
+</div>
+
+<!-- ADMIN EDIT MODAL -->
+<div id="admin-modal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-head"><div class="modal-head-title">✏️ แก้ไขสิทธิ์ Admin</div><button class="modal-close" onclick="closeAdminModal()">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="modal-admin-uid">
+      <div class="form-row cols-2">
+        <div class="form-field"><label>ชื่อ</label><input type="text" id="modal-admin-name"></div>
+        <div class="form-field"><label>ระดับสิทธิ์</label><select id="modal-admin-level"><option value="admin">Admin</option><option value="viewer">Viewer</option></select></div>
+      </div>
+      <div class="form-row"><div class="form-field"><label>สถานะ</label><select id="modal-admin-active"><option value="true">✅ Active</option><option value="false">❌ Inactive (ระงับการเข้าถึง)</option></select></div></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-secondary" onclick="closeAdminModal()">ยกเลิก</button><button class="btn btn-purple" onclick="saveAdminEdit()">💾 บันทึก</button></div>
+  </div>
+</div>
+
+<!-- LOGOUT CONFIRM -->
+<div id="logout-confirm" class="confirm-overlay hidden">
+  <div class="confirm-box">
+    <div class="confirm-icon logout"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
+    <div class="confirm-title">ออกจากระบบ?</div>
+    <div class="confirm-msg">ระบบจะ Logout และล้าง session</div>
+    <div class="confirm-user"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2266FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.58-7 8-7s8 3 8 7"/></svg><span id="confirm-user-email">—</span></div>
+    <div class="confirm-btns"><button class="confirm-cancel" onclick="closeLogoutConfirm()">ยกเลิก</button><button class="confirm-logout" onclick="doLogout()"><span style="display:flex;align-items:center;justify-content:center;gap:7px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>ยืนยัน</span></button></div>
+  </div>
+</div>
+
+<!-- PDF MODAL -->
+<div id="pdf-modal" class="hidden">
+  <div class="pdf-modal-toolbar"><div class="pdf-modal-title"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fca5a5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>PDF Report <span id="pdf-modal-range" style="font-size:11px;color:#94a3b8;font-weight:400;"></span></div><div class="pdf-modal-actions"><button class="btn btn-pdf" onclick="doPrint()" style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>พิมพ์</button><button class="btn btn-secondary" onclick="closePdfModal()">× ปิด</button></div></div>
+  <div id="pdf-preview-frame"></div>
+</div>
+
+<!-- IMPORT WORKER MODAL -->
+<div id="import-worker-modal" class="hidden">
+  <div class="iw-box">
+    <div class="iw-head">
+      <div class="iw-head-left">
+        <div class="iw-head-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <div><div class="iw-head-title">📥 เพิ่มข้อมูลพนักงาน</div><div class="iw-head-sub">PRB &amp; BPI Employee · Batch 499 · Resume ต่อจากที่ค้างได้</div></div>
+      </div>
+      <button class="iw-close" onclick="closeImportWorkerModal()">✕</button>
+    </div>
+    <div class="iw-body">
+      <div class="iw-mode-row">
+        <div class="iw-mode-btn active-all" id="iw-mode-btn-all" onclick="iwSetMode('all')"><div style="font-size:13px;margin-bottom:3px;">📥 Import ทั้งหมด</div><div style="font-size:10px;opacity:.8;">เพิ่มใหม่ + อัปเดตที่มีอยู่</div></div>
+        <div class="iw-mode-btn inactive" id="iw-mode-btn-skip" onclick="iwSetMode('skip')"><div style="font-size:13px;margin-bottom:3px;">⏭️ Import เฉพาะใหม่</div><div style="font-size:10px;opacity:.8;">ข้าม empId ที่มีอยู่แล้ว</div></div>
+      </div>
+      <div class="iw-mode-info all" id="iw-mode-info"><strong>Import ทั้งหมด:</strong> เขียนทับด้วย merge — ไม่ duplicate</div>
+      <div class="iw-resume" id="iw-resume"><div><div style="font-size:10px;color:rgba(0,229,209,.7);margin-bottom:3px;">มีข้อมูลในระบบแล้ว</div><div style="display:flex;align-items:center;gap:8px;"><span class="iw-resume-num" id="iw-existing-count">0</span><span style="font-size:12px;color:var(--teal);">รายการ</span></div></div><div style="font-size:11px;color:rgba(0,229,209,.7);line-height:1.6;">โหมด "Import เฉพาะใหม่" จะข้ามรายการที่มีแล้ว</div></div>
+      <div class="iw-upload" id="iw-drop-zone">
+        <input type="file" id="iw-file-input" accept=".xlsx,.xls,.csv" onchange="iwHandleFile(event)">
+        <div class="iw-upload-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg></div>
+        <div class="iw-upload-label">คลิกหรือลากไฟล์มาวาง</div>
+        <div class="iw-upload-hint">.xlsx · .xls · .csv · PRB&amp;BPI Format</div>
+      </div>
+      <div id="iw-preview-section" style="display:none;">
+        <div class="iw-file-info" id="iw-file-info"></div>
+        <div class="iw-val-grid">
+          <div class="iw-val-card iw-val-ok"><div class="iw-val-num" id="iw-v-new">0</div><div class="iw-val-label">เพิ่มใหม่</div></div>
+          <div class="iw-val-card iw-val-upd"><div class="iw-val-num" id="iw-v-upd">0</div><div class="iw-val-label">อัปเดต</div></div>
+          <div class="iw-val-card iw-val-skip"><div class="iw-val-num" id="iw-v-skip">0</div><div class="iw-val-label">ข้าม</div></div>
+          <div class="iw-val-card iw-val-total"><div class="iw-val-num" id="iw-v-total">0</div><div class="iw-val-label">ทั้งหมด</div></div>
+        </div>
+        <div id="iw-col-map-result" class="iw-col-map"></div>
+        <div id="iw-col-map-warn" class="iw-col-warn"></div>
+        <div class="iw-tbl-wrap"><div class="iw-tbl-bar"><span>ตัวอย่าง 10 แถวแรก</span><span class="count-pill" id="iw-preview-count">0</span></div><div class="iw-tbl-scroll"><table><thead><tr><th>#</th><th>empId</th><th>badgeId</th><th>nameEn</th><th>nameTh</th><th>site</th><th>dept</th><th>title</th><th>สถานะ</th></tr></thead><tbody id="iw-preview-tbody"></tbody></table></div></div>
+        <div class="iw-prog-wrap" id="iw-prog-wrap">
+          <div class="iw-prog-header"><span class="iw-prog-label" id="iw-prog-label">กำลัง Import...</span><span class="iw-prog-pct" id="iw-prog-pct">0%</span></div>
+          <div class="iw-prog-bg"><div class="iw-prog-fill" id="iw-prog-bar"></div></div>
+          <div class="iw-prog-detail" id="iw-prog-detail">รอเริ่ม...</div>
+          <div style="display:flex;gap:16px;margin-top:8px;font-size:11px;"><span style="color:var(--green);">✅ สำเร็จ: <strong id="iw-prog-ok">0</strong></span><span style="color:var(--muted);">⏭️ ข้าม: <strong id="iw-prog-skipped">0</strong></span><span style="color:var(--red);">❌ Error: <strong id="iw-prog-err">0</strong></span></div>
+          <div class="iw-batch-log" id="iw-batch-log"></div>
+        </div>
+        <div class="iw-result" id="iw-result"></div>
+      </div>
+    </div>
+    <div class="iw-footer">
+      <button class="btn btn-primary" id="iw-import-btn" onclick="iwStartImport()" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span id="iw-import-btn-text">เริ่ม Import ลงระบบ</span>
+      </button>
+      <button class="btn btn-secondary" onclick="iwResetFile()">เลือกไฟล์ใหม่</button>
+      <button class="btn btn-secondary" onclick="closeImportWorkerModal()">ปิด</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const LS_KEY='bac_cfg_v4';
+const IW_BATCH=499,IW_DELAY=100;
+let db=null,auth=null,isDemoMode=false,currentUser=null;
+let allEmployees=[],allLogs=[],allEntrances=[],allGuards=[],allAdmins=[];
+let editingEmpId=null,editingEntId=null,loginInProgress=false;
+let _dateFrom='',_dateTo='';
+let sidebarCollapsed=false;
+let iwParsedData=[],iwExistingIds=new Set(),iwImportMode='all',iwIsImporting=false;
+
+function normalizeStatus(v){const s=String(v==null?'':v).trim().toLowerCase();if(!s)return '';if(['allowed','allow','granted','grant','true','1','yes','pass','ok','success','ผ่าน'].includes(s))return 'allowed';if(['denied','deny','rejected','reject','false','0','no','fail','block','blocked','ไม่ผ่าน'].includes(s))return 'denied';return s;}
+const PAGE_META={dashboard:{title:'Dashboard',sub:'ภาพรวมระบบ'},admin:{title:'จัดการสิทธิ์ Admin',sub:'เพิ่ม แก้ไข ผู้ดูแลระบบ'},employees:{title:'จัดการพนักงาน',sub:'เพิ่ม แก้ไข ข้อมูลพนักงาน'},entrances:{title:'จุดทางเข้า',sub:'บริหารจัดการจุดทางเข้า'},users:{title:'Guard Users',sub:'จัดการบัญชีเจ้าหน้าที่'},logs:{title:'Log ทั้งหมด',sub:'ประวัติการเข้า-ออกพื้นที่'},help:{title:'วิธีใช้งาน',sub:'คู่มือและ FAQ'}};
+const DEMO_GATES=[{id:'gate1',name:'Main Entrance 1',zone:'Zone A',desc:'ประตูหลัก',status:'active',order:1,site:'PRB'},{id:'gate2',name:'Main Entrance 2',zone:'Zone B',desc:'ประตูหลัง',status:'active',order:2,site:'BPI'}];
+const gel=id=>document.getElementById(id);
+const gv=id=>{const el=gel(id);return el?el.value.trim():'';};
+
+(function init(){const cfg=loadCfg();if(cfg){gel('setup-screen').classList.add('hidden');connectFirebase(cfg,false);}})();
+function loadCfg(){try{const r=localStorage.getItem(LS_KEY);if(!r)return null;const c=JSON.parse(r);return(c.apiKey&&c.projectId)?c:null;}catch(e){return null;}}
+function saveAndConnect(){const cfg={apiKey:gv('cfg-apikey'),authDomain:gv('cfg-authdomain'),projectId:gv('cfg-projectid'),storageBucket:gv('cfg-storagebucket'),messagingSenderId:gv('cfg-senderid'),appId:gv('cfg-appid')};const err=gel('setup-err');err.classList.remove('show');if(!cfg.apiKey||!cfg.projectId){err.textContent='กรุณากรอก API Key และ Project ID';err.classList.add('show');return;}localStorage.setItem(LS_KEY,JSON.stringify(cfg));connectFirebase(cfg,true);}
+function connectFirebase(cfg,fromForm){try{if(firebase.apps.length)firebase.apps.forEach(a=>a.delete());firebase.initializeApp(cfg);db=firebase.firestore();auth=firebase.auth();gel('setup-screen').classList.add('hidden');gel('login-screen').classList.remove('hidden');auth.signOut().finally(()=>auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).finally(()=>auth.onAuthStateChanged(handleAuthChange)));}catch(e){localStorage.removeItem(LS_KEY);gel('setup-screen').classList.remove('hidden');gel('login-screen').classList.add('hidden');if(fromForm){const el=gel('setup-err');el.textContent='การตั้งค่าไม่ถูกต้อง: '+e.message;el.classList.add('show');}}}
+function resetConfig(){if(!confirm('เปลี่ยนการตั้งค่าการเชื่อมต่อ?'))return;localStorage.removeItem(LS_KEY);location.reload();}
+
+function startDemo(){
+  isDemoMode=true;
+  allEntrances=[...DEMO_GATES];
+  allGuards=[{uid:'g1',email:'guard01@wd.com',displayName:'สมชาย รักษาการ',role:'guard',assignedEntranceId:'gate1',active:true},{uid:'g2',email:'guard02@wd.com',displayName:'วิชัย เฝ้าประตู',role:'supervisor',assignedEntranceId:'',active:true},{uid:'g3',email:'guard03@wd.com',displayName:'นิรันดร์ ยามดึก',role:'guard',assignedEntranceId:'gate2',active:false}];
+  allAdmins=[{uid:'a1',email:'admin@wd.com',displayName:'Admin หลัก',role:'admin',level:'admin',active:true,createdAt:'2026-01-01'},{uid:'a2',email:'admin2@wd.com',displayName:'ผู้ดูแลระบบ 2',role:'admin',level:'viewer',active:true,createdAt:'2026-03-15'}];
+  allEmployees=[{empId:'1000180969',badgeId:'0012871027',nameEn:'ADISAK MUNGKALAKUL',nameTh:'อดิศักดิ์ มังคละกุล',site:'BPI',cloudSite:'034 BangPa-In',dept:'REO - Security (Mfg)',division:'-',title:'Finance',track:'Management'},{empId:'1000338315',badgeId:'0023456789',nameEn:'SOMCHAI JAIDEE',nameTh:'สมชาย ใจดี',site:'PRB',cloudSite:'025 PrachinBuri',dept:'Engineering',division:'Mfg',title:'Engineer',track:'Individual Contributor'},{empId:'7358710',badgeId:'0087654321',nameEn:'JOHN SMITH',nameTh:'-',site:'BPI',cloudSite:'034 BangPa-In',dept:'IT',division:'Corp',title:'IT Manager',track:'Management'}];
+  const now=new Date();allLogs=[];
+  const pool=[{empId:'1000180969',badgeId:'0012871027',nameEn:'ADISAK MUNGKALAKUL',nameTh:'อดิศักดิ์ มังคละกุล',site:'BPI',dept:'REO - Security (Mfg)',title:'Finance'},{empId:'1000338315',badgeId:'0023456789',nameEn:'SOMCHAI JAIDEE',nameTh:'สมชาย ใจดี',site:'PRB',dept:'Engineering',title:'Engineer'},{empId:'7358710',badgeId:'0087654321',nameEn:'JOHN SMITH',nameTh:'-',site:'BPI',dept:'IT',title:'IT Manager'}];
+  for(let d=0;d<14;d++){for(let h=0;h<4;h++){const dt=new Date(now);dt.setDate(dt.getDate()-d);dt.setHours(7+h*3,~~(Math.random()*59),~~(Math.random()*59));const isDenied=(h===1&&d%3===0);const emp=pool[h%pool.length];allLogs.push({id:'l'+(d*4+h),datetimeDisplay:fmtTH(dt),isoDate:dt.toISOString().slice(0,10),entrance:'Main Entrance '+(h%2===0?'1':'2'),status:isDenied?'denied':'allowed',empId:emp.empId,badgeId:emp.badgeId,nameEn:isDenied?'NOT FOUND':emp.nameEn,nameTh:isDenied?'ไม่พบข้อมูล':emp.nameTh,site:isDenied?'-':emp.site,dept:isDenied?'-':emp.dept,title:isDenied?'-':emp.title,guardEmail:'guard01@wd.com'});}}
+  gel('setup-screen').classList.add('hidden');gel('login-screen').classList.add('hidden');gel('mode-badge').style.display='';
+  showMainApp({email:'admin@demo.com',displayName:'Demo Admin'});setSyncStatus('ok','Demo Mode');renderAll();
+}
+function fmtTH(dt){return String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+(dt.getFullYear()+543)+' '+String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0')+':'+String(dt.getSeconds()).padStart(2,'0');}
+function confirmLogout(){gel('confirm-user-email').textContent=currentUser?currentUser.email:(isDemoMode?'admin@demo.com':'—');gel('logout-confirm').classList.remove('hidden');}
+function closeLogoutConfirm(){gel('logout-confirm').classList.add('hidden');}
+function handleAuthChange(user){if(user){setLoginLoading(true,'กำลังตรวจสอบ...');checkAdminRole(user);}else{setLoginLoading(false);gel('login-screen').classList.remove('hidden');hideMainApp();}}
+async function checkAdminRole(user){try{const doc=await db.collection('users').doc(user.uid).get();const data=doc.exists?doc.data():null;if(data&&data.role==='admin'&&data.active!==false){currentUser=user;gel('login-screen').classList.add('hidden');setLoginLoading(false);showMainApp(user);initListeners();}else{await auth.signOut();setLoginLoading(false);const e=gel('login-err');e.textContent='⛔ ไม่มีสิทธิ์ Admin';e.classList.add('show');}}catch(e){await auth.signOut().catch(()=>{});setLoginLoading(false);const el=gel('login-err');el.textContent=(e.code==='permission-denied'?'🔒 ระบบปฏิเสธการเข้าถึง':e.code==='unavailable'?'🌐 ไม่มีการเชื่อมต่อ':'❌ '+e.message);el.classList.add('show');}}
+function setLoginLoading(on,msg){const ck=gel('login-checking'),ff=gel('login-form-fields'),btn=gel('login-btn');if(on){if(msg)gel('login-checking-text').textContent=msg;ck.classList.add('show');ff.style.opacity='0.4';ff.style.pointerEvents='none';if(btn){btn.disabled=true;btn.textContent='กำลังตรวจสอบ...';}}else{ck.classList.remove('show');ff.style.opacity='1';ff.style.pointerEvents='';if(btn){btn.disabled=false;btn.textContent='เข้าสู่ระบบ';}}}
+function doLogin(){if(loginInProgress)return;const e=gv('login-email'),p=gv('login-pass');const err=gel('login-err');err.classList.remove('show');if(!e||!p){err.textContent='กรุณากรอก Email และ Password';err.classList.add('show');return;}loginInProgress=true;setLoginLoading(true,'กำลังเข้าสู่ระบบ...');auth.signInWithEmailAndPassword(e,p).catch(ex=>{loginInProgress=false;setLoginLoading(false);err.textContent=['auth/user-not-found','auth/wrong-password','auth/invalid-credential'].includes(ex.code)?'❌ Email หรือ Password ไม่ถูกต้อง':ex.code==='auth/too-many-requests'?'⚠️ ลองใหม่อีกครั้ง':'Login ไม่สำเร็จ: '+ex.message;err.classList.add('show');}).finally(()=>{loginInProgress=false;});}
+function doGoogleLogin(){const p=new firebase.auth.GoogleAuthProvider();setLoginLoading(true,'กำลังเปิด Google...');auth.signInWithPopup(p).catch(e=>{setLoginLoading(false);if(e.code!=='auth/popup-closed-by-user'){const el=gel('login-err');el.textContent=e.message;el.classList.add('show');}});}
+function doLogout(){closeLogoutConfirm();if(isDemoMode){location.reload();return;}auth.signOut();}
+function showMainApp(user){gel('sidebar').classList.add('show');gel('topbar').classList.add('show');gel('main-app').style.display='';gel('main-footer').style.display='';const name=user.displayName||user.email||'Admin';gel('sb-user-name').textContent=name;gel('sb-avatar-char').textContent=name.charAt(0).toUpperCase();gel('topbar-user-email').textContent=user.email||'';}
+function hideMainApp(){gel('sidebar').classList.remove('show');gel('topbar').classList.remove('show');gel('main-app').style.display='none';gel('main-footer').style.display='none';}
+function toggleSidebar(){sidebarCollapsed=!sidebarCollapsed;gel('sidebar').classList.toggle('collapsed',sidebarCollapsed);gel('app-shell').classList.toggle('collapsed',sidebarCollapsed);}
+
+function initListeners(){
+  setSyncStatus('pending','Connecting...');
+  db.collection('employees').onSnapshot(s=>{allEmployees=s.docs.map(d=>({...d.data(),firestoreId:d.id}));renderEmployeesTable();updateDashStats();updateEmpMini();setSyncStatus('ok','Connected');},e=>setSyncStatus('err','Error'));
+  db.collection('entrances').orderBy('order').onSnapshot(s=>{if(s.empty){seedGates();return;}allEntrances=s.docs.map(d=>({...d.data(),firestoreId:d.id}));renderEntrancesAdmin();populateEntranceSelects();renderDashGateStats();},e=>console.error(e));
+  db.collection('users').onSnapshot(s=>{const all=s.docs.map(d=>({...d.data(),firestoreId:d.id}));allGuards=all.filter(u=>u.role!=='admin');allAdmins=all.filter(u=>u.role==='admin');renderGuardList();updateGuardStats();renderAdminList();},e=>console.error(e));
+  db.collection('accessLogs').orderBy('timestamp','desc').limit(500).onSnapshot(s=>{allLogs=s.docs.map(d=>{const r=d.data();return{...r,firestoreId:d.id,isoDate:extractISO(r),status:normalizeStatus(r.status)};});updateDebugStrip();runFilter();renderDashLogs();updateDashStats();updateLogBadge();},e=>console.error(e));
+}
+
+function updateDebugStrip(){const el=gel('debug-strip');if(!el)return;const map={};allLogs.forEach(r=>{map[r.status]=(map[r.status]||0)+1;});el.textContent='Status: '+Object.entries(map).map(([k,v])=>k+'('+v+')').join(' · ')+' | Total: '+allLogs.length;el.style.display='block';}
+function updateLogBadge(){const b=gel('sb-log-badge');if(!b)return;const denied=allLogs.filter(r=>r.status==='denied').length;if(denied>0){b.textContent=denied;b.style.display='';}else b.style.display='none';}
+function updateEmpMini(){const t=gel('emp-total-mini'),p=gel('emp-prb-mini'),bi=gel('emp-bpi-mini'),h=gel('emp-ho-mini');if(t)t.textContent=allEmployees.length;if(p)p.textContent=allEmployees.filter(e=>e.site==='PRB').length;if(bi)bi.textContent=allEmployees.filter(e=>e.site==='BPI').length;if(h)h.textContent=allEmployees.filter(e=>e.site==='HO').length;}
+function updateGuardStats(){const total=allGuards.length,active=allGuards.filter(g=>g.active!==false).length;const t=gel('guard-total-count'),a=gel('guard-active-badge');if(t)t.textContent=total;if(a)a.textContent='Active: '+active;}
+function extractISO(data){if(data.timestamp&&data.timestamp.toDate)return data.timestamp.toDate().toISOString().slice(0,10);if(data.isoDate)return data.isoDate;if(data.datetimeDisplay){const p=data.datetimeDisplay.split(' ')[0].split('/');if(p.length===3){const y=parseInt(p[2])>2500?parseInt(p[2])-543:parseInt(p[2]);return y+'-'+String(p[1]).padStart(2,'0')+'-'+String(p[0]).padStart(2,'0');}}return '';}
+function seedGates(){if(isDemoMode)return;const b=db.batch();DEMO_GATES.forEach(g=>b.set(db.collection('entrances').doc(g.id),g));b.commit();}
+function setSyncStatus(t,m){const d=gel('sync-dot'),l=gel('sync-label');if(d)d.className='sync-dot '+(t==='ok'?'ok':t==='pending'?'pending':'err');if(l)l.textContent=m;}
+function renderAll(){renderEmployeesTable();updateDashStats();renderDashLogs();renderEntrancesAdmin();populateEntranceSelects();renderDashGateStats();renderGuardList();updateGuardStats();renderAdminList();runFilter();updateLogBadge();updateEmpMini();}
+
+function switchTab(name){
+  ['dashboard','admin','employees','entrances','users','logs','help'].forEach(t=>{
+    gel('tab-content-'+t).classList.toggle('active',t===name);
+    const nav=gel('nav-'+t);if(nav)nav.classList.toggle('active',t===name);
+  });
+  const meta=PAGE_META[name]||{};
+  if(gel('topbar-page-title'))gel('topbar-page-title').textContent=meta.title||name;
+  if(gel('topbar-page-sub'))gel('topbar-page-sub').textContent=meta.sub||'';
+  if(name==='logs'){populateLogEntranceFilter();runFilter();}
+  if(name==='users'){populateEntranceSelects();renderGuardList();updateGuardStats();}
+  if(name==='admin'){renderAdminList();}
+}
+
+function updateDashStats(){gel('stat-emp').textContent=allEmployees.length;gel('stat-today-ok').textContent=allLogs.filter(r=>r.status==='allowed').length;gel('stat-today-deny').textContent=allLogs.filter(r=>r.status==='denied').length;gel('stat-gates').textContent=allEntrances.filter(g=>g.status==='active').length;}
+function renderDashLogs(){const tbody=gel('dash-log-tbody');const data=allLogs.slice(0,20);if(!data.length){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted);">ยังไม่มีข้อมูล</td></tr>';return;}tbody.innerHTML=data.map(r=>'<tr><td style="font-size:11px;white-space:nowrap;">'+(r.datetimeDisplay||'')+'</td><td><span class="pill pill-blue">'+(r.entrance||'-')+'</span></td><td>'+(r.status==='allowed'?'<span class="pill pill-green">✓ OK</span>':'<span class="pill pill-red">✗ DENY</span>')+'</td><td style="font-family:monospace;font-size:11px;">'+(r.empId||'-')+'</td><td>'+(r.nameEn||'-')+'</td><td style="font-size:11px;">'+(r.dept||'-')+'</td><td><span class="pill '+(r.site==='PRB'?'pill-blue':r.site==='BPI'?'pill-teal':'pill-dim')+'">'+(r.site||'-')+'</span></td></tr>').join('');}
+function renderDashGateStats(){const c=gel('dash-gate-stats');c.innerHTML=allEntrances.map(g=>'<div style="padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:10px;"><div style="font-size:13px;font-weight:700;color:var(--fg);margin-bottom:8px;">'+g.name+'</div><div style="display:flex;gap:16px;"><div><div style="font-size:18px;font-weight:800;color:var(--green);">'+allLogs.filter(r=>r.entrance===g.name&&r.status==='allowed').length+'</div><div style="font-size:10px;color:var(--muted);">GRANTED</div></div><div><div style="font-size:18px;font-weight:800;color:var(--red);">'+allLogs.filter(r=>r.entrance===g.name&&r.status==='denied').length+'</div><div style="font-size:10px;color:var(--muted);">DENIED</div></div></div></div>').join('');}
+
+/* ══ ADMIN RIGHTS ══ */
+async function createAdminUser(){
+  const email=gv('admin-email'),pass=gel('admin-pass').value,name=gv('admin-name'),level=gv('admin-level');
+  if(!email||!pass){setMsg('admin-form-status','err','กรุณากรอก Email และ Password');return;}
+  if(pass.length<8){setMsg('admin-form-status','err','Password ต้องมีอย่างน้อย 8 ตัวอักษร');return;}
+  if(isDemoMode){
+    allAdmins.push({uid:'demo_a_'+Date.now(),email,displayName:name,role:'admin',level,active:true});
+    renderAdminList();setMsg('admin-form-status','ok','✅ มอบสิทธิ์ Admin (Demo)');
+    ['admin-email','admin-pass','admin-name'].forEach(id=>gel(id).value='');return;
+  }
+  try{
+    const cfg=loadCfg();
+    const sa=firebase.initializeApp(cfg,'admin_'+Date.now());
+    const sau=sa.auth();
+    const uc=await sau.createUserWithEmailAndPassword(email,pass);
+    const uid=uc.user.uid;
+    if(name)await uc.user.updateProfile({displayName:name});
+    await db.collection('users').doc(uid).set({uid,email,displayName:name,role:'admin',level,active:true,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    await sau.signOut();await sa.delete();
+    setMsg('admin-form-status','ok','✅ มอบสิทธิ์ Admin สำเร็จ: '+email);
+    ['admin-email','admin-pass','admin-name'].forEach(id=>gel(id).value='');
+  }catch(e){setMsg('admin-form-status','err','Error: '+e.message);}
+}
+
+function filterAdminList(){
+  const txt=(gel('admin-search')||{value:''}).value.trim().toLowerCase();
+  renderAdminListData(allAdmins.filter(a=>!txt||[(a.displayName||''),(a.email||'')].join(' ').toLowerCase().includes(txt)));
+}
+function renderAdminList(){filterAdminList();}
+function renderAdminListData(data){
+  const c=gel('admin-list');
+  if(!data||!data.length){c.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px 20px;color:var(--muted);"><div style="font-size:32px;margin-bottom:10px;opacity:.5;">🛡️</div><div style="font-size:14px;font-weight:700;">ยังไม่มีผู้ดูแลระบบ</div><div style="font-size:12px;margin-top:4px;">เพิ่ม Admin ด้านบน</div></div>';return;}
+  c.innerHTML=data.map(a=>{
+    const isActive=a.active!==false;
+    const isAdmin=a.level==='admin'||!a.level;
+    const initials=(a.displayName||a.email||'A').charAt(0).toUpperCase();
+    return '<div class="admin-user-card"><div class="admin-card-top"><div class="admin-card-avatar">'+initials+'</div><div class="admin-card-meta"><div class="admin-card-name">'+(a.displayName||'ไม่ระบุชื่อ')+'</div><div class="admin-card-email">'+a.email+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;"><span class="pill '+(isAdmin?'pill-purple':'pill-blue')+'">'+(isAdmin?'Admin':'Viewer')+'</span><span class="pill '+(isActive?'pill-green':'pill-dim')+'">'+(isActive?'● Active':'○ Off')+'</span></div></div><div class="admin-card-actions"><button class="btn btn-secondary" style="flex:1;font-size:11px;" onclick="openAdminModal(\''+a.uid+'\')">✏️ แก้ไขสิทธิ์</button><button class="btn btn-danger" style="font-size:11px;" onclick="revokeAdminUser(\''+a.uid+'\')">🗑️ ถอนสิทธิ์</button></div></div>';
+  }).join('');
+}
+
+function openAdminModal(uid){
+  const a=allAdmins.find(x=>x.uid===uid);if(!a)return;
+  gel('modal-admin-uid').value=uid;
+  gel('modal-admin-name').value=a.displayName||'';
+  gel('modal-admin-level').value=a.level||'admin';
+  gel('modal-admin-active').value=String(a.active!==false);
+  gel('admin-modal').classList.remove('hidden');
+}
+function closeAdminModal(){gel('admin-modal').classList.add('hidden');}
+async function saveAdminEdit(){
+  const uid=gel('modal-admin-uid').value;
+  const obj={displayName:gel('modal-admin-name').value,level:gel('modal-admin-level').value,active:gel('modal-admin-active').value==='true'};
+  if(!isDemoMode)await db.collection('users').doc(uid).update(obj);
+  else{const i=allAdmins.findIndex(x=>x.uid===uid);if(i>=0)allAdmins[i]={...allAdmins[i],...obj};renderAdminList();}
+  closeAdminModal();
+}
+async function revokeAdminUser(uid){
+  const a=allAdmins.find(x=>x.uid===uid);
+  if(!a||!confirm('ถอนสิทธิ์ Admin "'+a.email+'"?\n\nการดำเนินการนี้จะยกเลิกสิทธิ์การเข้าถึง Admin Portal ทันที'))return;
+  if(!isDemoMode)await db.collection('users').doc(uid).update({active:false,role:'revoked'});
+  else{allAdmins=allAdmins.filter(x=>x.uid!==uid);renderAdminList();}
+}
+
+/* ══ EMPLOYEES ══ */
+function renderEmployeesTable(data){if(!data)data=allEmployees;const tbody=gel('emp-tbody');gel('emp-count').textContent=data.length+' คน';if(!data.length){tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--muted);">ไม่พบข้อมูล</td></tr>';return;}tbody.innerHTML=data.map(e=>'<tr><td style="font-family:monospace;font-size:11px;">'+e.empId+'</td><td style="font-family:monospace;font-size:11px;">'+(e.badgeId||'-')+'</td><td style="font-size:12px;font-weight:600;">'+(e.nameEn||'-')+'</td><td style="font-size:12px;">'+(e.nameTh||'-')+'</td><td><span class="pill '+(e.site==='PRB'?'pill-blue':e.site==='BPI'?'pill-teal':e.site==='HO'?'pill-amber':'pill-dim')+'">'+(e.site||'-')+'</span></td><td style="font-size:11px;">'+(e.cloudSite||'-')+'</td><td style="font-size:11px;">'+(e.dept||'-')+'</td><td style="font-size:11px;">'+(e.title||'-')+'</td><td><span class="pill '+(e.track==='Management'?'pill-amber':e.track==='Technical'?'pill-blue':'pill-dim')+'">'+(e.track||'-')+'</span></td><td><button class="btn btn-secondary" style="padding:4px 10px;font-size:11px;" onclick="loadEmpToForm(\''+e.empId+'\')">✏️</button></td></tr>').join('');}
+function filterEmployees(){const txt=gv('emp-search').toLowerCase(),site=gv('emp-filter-site'),track=gv('emp-filter-track');renderEmployeesTable(allEmployees.filter(e=>(!txt||[e.empId,e.badgeId,e.nameEn,e.nameTh,e.dept].some(f=>(f||'').toLowerCase().includes(txt)))&&(!site||e.site===site)&&(!track||e.track===track)));}
+function loadEmpToForm(empId){const emp=allEmployees.find(e=>e.empId===empId);if(!emp)return;editingEmpId=empId;gel('f-empid').value=emp.empId||'';gel('f-badgeid').value=emp.badgeId||'';gel('f-nameen').value=emp.nameEn||'';gel('f-nameth').value=emp.nameTh||'';gel('f-site').value=emp.site||'BPI';gel('f-cloudsite').value=emp.cloudSite||'';gel('f-dept').value=emp.dept||'';gel('f-division').value=emp.division||'';gel('f-title').value=emp.title||'';gel('f-track').value=emp.track||'Management';gel('emp-form-title').textContent='✏️ แก้ไข: '+empId;gel('emp-form-sub').textContent=(emp.nameEn||'')+'  ·  '+(emp.dept||'');setMsg('emp-form-status','ok','โหลดข้อมูลแล้ว — กดบันทึกเพื่อแก้ไข');}
+function searchEmployeeToEdit(){const key=gv('emp-search-edit').toLowerCase();const emp=allEmployees.find(e=>(e.empId||'').toLowerCase()===key||(e.badgeId||'').toLowerCase()===key||(e.nameEn||'').toLowerCase().includes(key)||(e.nameTh||'').includes(key));if(emp)loadEmpToForm(emp.empId);else setMsg('emp-form-status','err','ไม่พบ: '+key);}
+async function saveEmployee(){const empId=gv('f-empid');if(!empId){setMsg('emp-form-status','err','กรุณากรอก Emp ID');return;}const obj={empId,badgeId:gv('f-badgeid'),nameEn:gv('f-nameen'),nameTh:gv('f-nameth'),site:gv('f-site'),cloudSite:gv('f-cloudsite'),dept:gv('f-dept'),division:gv('f-division'),title:gv('f-title'),track:gv('f-track')};if(!isDemoMode){try{await db.collection('employees').doc(empId).set(obj,{merge:true});setMsg('emp-form-status','ok','✅ บันทึกสำเร็จ');}catch(e){setMsg('emp-form-status','err','Error: '+e.message);return;}}else{const i=allEmployees.findIndex(e=>e.empId===empId);i>=0?allEmployees[i]=obj:allEmployees.push(obj);renderEmployeesTable();updateDashStats();updateEmpMini();setMsg('emp-form-status','ok','✅ บันทึก (Demo) สำเร็จ');}editingEmpId=empId;}
+async function deleteEmployee(){if(!editingEmpId){setMsg('emp-form-status','err','เลือกพนักงานก่อน');return;}if(!confirm('ลบ '+editingEmpId+'?'))return;if(!isDemoMode){try{await db.collection('employees').doc(editingEmpId).delete();}catch(e){setMsg('emp-form-status','err','Error: '+e.message);return;}}else{allEmployees=allEmployees.filter(e=>e.empId!==editingEmpId);renderEmployeesTable();updateEmpMini();}setMsg('emp-form-status','ok','✅ ลบสำเร็จ');clearEmpForm();}
+function clearEmpForm(){['f-empid','f-badgeid','f-nameen','f-nameth','f-cloudsite','f-dept','f-division','f-title'].forEach(id=>gel(id).value='');gel('f-site').value='BPI';gel('f-track').value='Management';editingEmpId=null;gel('emp-form-title').textContent='➕ เพิ่ม / แก้ไขพนักงาน';gel('emp-form-sub').textContent='Document ID = empId · บันทึกลงระบบทันที';gel('emp-form-status').className='status-msg';}
+function exportEmpCSV(){downloadCSV([['empId','badgeId','nameEn','nameTh','site','cloudSite','dept','division','title','track'],...allEmployees.map(e=>[e.empId,e.badgeId,e.nameEn,e.nameTh,e.site,e.cloudSite,e.dept,e.division,e.title,e.track])],'employees_'+Date.now()+'.csv');}
+
+/* ══ ENTRANCES ══ */
+function renderEntrancesAdmin(){const c=gel('entrance-grid-admin');if(!allEntrances.length){c.innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px;">ยังไม่มีจุดทางเข้า</div>';return;}c.innerHTML=allEntrances.map(g=>'<div class="ent-card"><div class="ent-name">'+g.name+'</div><div class="ent-zone"><span class="pill pill-blue">'+(g.zone||'-')+'</span> · Site: '+(g.site||'ALL')+'</div><div class="ent-stats"><div><div class="ent-stat-num" style="color:var(--green);">'+allLogs.filter(r=>r.entrance===g.name&&r.status==='allowed').length+'</div><div class="ent-stat-label">GRANTED</div></div><div><div class="ent-stat-num" style="color:var(--red);">'+allLogs.filter(r=>r.entrance===g.name&&r.status==='denied').length+'</div><div class="ent-stat-label">DENIED</div></div><div><div class="ent-stat-num" style="color:'+(g.status==='active'?'var(--green)':'var(--muted)')+';">'+(g.status==='active'?'ON':'OFF')+'</div><div class="ent-stat-label">STATUS</div></div></div><div class="ent-actions"><button class="btn btn-secondary" style="font-size:11px;padding:5px 10px;" onclick="loadEntToForm(\''+g.id+'\')">✏️</button><button class="btn btn-danger" style="font-size:11px;padding:5px 10px;" onclick="deleteEntrance(\''+g.id+'\')">🗑️</button></div></div>').join('');}
+function loadEntToForm(id){const g=allEntrances.find(x=>x.id===id);if(!g)return;editingEntId=id;gel('ent-name').value=g.name;gel('ent-zone').value=g.zone||'';gel('ent-desc').value=g.desc||'';gel('ent-status').value=g.status||'active';gel('ent-order').value=g.order||1;gel('ent-site').value=g.site||'PRB';gel('ent-form-title').textContent='✏️ แก้ไข: '+g.name;setMsg('ent-form-status','ok','โหลดข้อมูลแล้ว');}
+async function saveEntrance(){const name=gv('ent-name');if(!name){setMsg('ent-form-status','err','กรุณากรอกชื่อ');return;}const id=editingEntId||(name.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'')+Date.now());const obj={id,name,zone:gv('ent-zone')||'—',desc:gv('ent-desc'),status:gv('ent-status'),order:parseInt(gv('ent-order'))||allEntrances.length+1,site:gv('ent-site')};if(!isDemoMode){try{await db.collection('entrances').doc(id).set(obj);setMsg('ent-form-status','ok','✅ บันทึกสำเร็จ');}catch(e){setMsg('ent-form-status','err','Error: '+e.message);return;}}else{const i=allEntrances.findIndex(x=>x.id===id);i>=0?allEntrances[i]=obj:allEntrances.push(obj);renderEntrancesAdmin();setMsg('ent-form-status','ok','✅ บันทึก (Demo)');}editingEntId=id;}
+async function deleteEntrance(id){const g=allEntrances.find(x=>x.id===id);if(!g||!confirm('ลบ "'+g.name+'"?'))return;if(!isDemoMode)await db.collection('entrances').doc(id).delete();else{allEntrances=allEntrances.filter(x=>x.id!==id);renderEntrancesAdmin();}clearEntForm();}
+function clearEntForm(){['ent-name','ent-zone','ent-desc','ent-order'].forEach(id=>gel(id).value='');gel('ent-status').value='active';gel('ent-site').value='PRB';editingEntId=null;gel('ent-form-title').textContent='➕ เพิ่มจุดทางเข้าใหม่';gel('ent-form-status').className='status-msg';}
+
+/* ══ GUARD USERS ══ */
+function populateEntranceSelects(){['guard-entrance','modal-guard-entrance'].forEach(selId=>{const sel=gel(selId);if(!sel)return;const prev=sel.value;sel.innerHTML='<option value="">— ทุกจุด —</option>';allEntrances.forEach(g=>{const o=document.createElement('option');o.value=g.id;o.textContent=g.name;sel.appendChild(o);});sel.value=prev;});}
+async function createGuardUser(){const email=gv('guard-email'),pass=gel('guard-pass').value,name=gv('guard-name'),entId=gv('guard-entrance'),role=gv('guard-role'),active=gv('guard-active')==='true';if(!email||!pass){setMsg('guard-form-status','err','กรุณากรอก Email และ Password');return;}if(pass.length<6){setMsg('guard-form-status','err','Password ต้องมีอย่างน้อย 6 ตัว');return;}if(isDemoMode){allGuards.push({uid:'demo_'+Date.now(),email,displayName:name,role,assignedEntranceId:entId,active});renderGuardList();updateGuardStats();setMsg('guard-form-status','ok','✅ สร้าง Guard (Demo)');return;}try{const cfg=loadCfg();const sa=firebase.initializeApp(cfg,'guard_'+Date.now());const sau=sa.auth();const uc=await sau.createUserWithEmailAndPassword(email,pass);const uid=uc.user.uid;if(name)await uc.user.updateProfile({displayName:name});await db.collection('users').doc(uid).set({uid,email,displayName:name,role,assignedEntranceId:entId,active,createdAt:firebase.firestore.FieldValue.serverTimestamp()});await sau.signOut();await sa.delete();setMsg('guard-form-status','ok','✅ สร้าง Guard สำเร็จ: '+email);['guard-email','guard-pass','guard-name'].forEach(id=>gel(id).value='');}catch(e){setMsg('guard-form-status','err','Error: '+e.message);}}
+function filterGuardList(){const txt=(gel('guard-search')||{value:''}).value.trim().toLowerCase();const role=(gel('guard-filter-role')||{value:''}).value;const status=(gel('guard-filter-status')||{value:''}).value;renderGuardListData(allGuards.filter(g=>{if(txt&&![(g.displayName||''),(g.email||'')].join(' ').toLowerCase().includes(txt))return false;if(role&&g.role!==role)return false;if(status!==''&&String(g.active!==false)!==status)return false;return true;}));}
+function renderGuardList(){filterGuardList();}
+function renderGuardListData(data){const c=gel('guard-list');if(!data||!data.length){c.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px 20px;color:var(--muted);"><div style="font-size:32px;margin-bottom:10px;">🛡️</div><div style="font-size:14px;font-weight:700;">ยังไม่มี Guard User</div></div>';return;}c.innerHTML=data.map(g=>{const ent=allEntrances.find(e=>e.id===g.assignedEntranceId);const isActive=g.active!==false;const isSup=g.role==='supervisor';const initials=(g.displayName||g.email||'G').charAt(0).toUpperCase();return'<div class="guard-user-card"><div class="guard-card-top"><div class="guard-card-avatar">'+initials+'</div><div class="guard-card-meta"><div class="guard-card-name">'+(g.displayName||'ไม่ระบุชื่อ')+'</div><div class="guard-card-email">'+g.email+'</div></div><div class="guard-card-badges"><span class="pill '+(isSup?'pill-amber':'pill-blue')+'">'+(isSup?'⭐ Supervisor':'🛡️ Guard')+'</span><span class="pill '+(isActive?'pill-green':'pill-dim')+'">'+(isActive?'● Active':'○ Off')+'</span></div></div><div class="guard-card-info"><div class="guard-card-info-row"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7"/><polyline points="17 8 21 12 17 16"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>จุดทางเข้า: <strong style="color:var(--fg);">'+(ent?ent.name:'ทุกจุด')+'</strong></span></div></div><div class="guard-card-actions"><button class="btn btn-secondary" style="flex:1;font-size:11px;" onclick="openGuardModal(\''+g.uid+'\')">✏️ แก้ไข</button><button class="btn btn-danger" style="font-size:11px;" onclick="deleteGuardUser(\''+g.uid+'\')">🗑️</button></div></div>';}).join('');}
+function openGuardModal(uid){const g=allGuards.find(x=>x.uid===uid);if(!g)return;gel('modal-guard-uid').value=uid;gel('modal-guard-name').value=g.displayName||'';populateEntranceSelects();gel('modal-guard-entrance').value=g.assignedEntranceId||'';gel('modal-guard-role').value=g.role||'guard';gel('modal-guard-active').value=String(g.active!==false);gel('guard-modal').classList.remove('hidden');}
+function closeGuardModal(){gel('guard-modal').classList.add('hidden');}
+async function saveGuardEdit(){const uid=gel('modal-guard-uid').value;const obj={displayName:gel('modal-guard-name').value,assignedEntranceId:gel('modal-guard-entrance').value,role:gel('modal-guard-role').value,active:gel('modal-guard-active').value==='true'};if(!isDemoMode)await db.collection('users').doc(uid).update(obj);else{const i=allGuards.findIndex(x=>x.uid===uid);if(i>=0)allGuards[i]={...allGuards[i],...obj};renderGuardList();updateGuardStats();}closeGuardModal();}
+async function deleteGuardUser(uid){const g=allGuards.find(x=>x.uid===uid);if(!g||!confirm('ลบ Guard "'+g.email+'"?'))return;if(!isDemoMode)await db.collection('users').doc(uid).delete();else{allGuards=allGuards.filter(x=>x.uid!==uid);renderGuardList();updateGuardStats();}}
+
+/* ══ DATE / LOG FILTER ══ */
+function toISO(d){return d.toISOString().slice(0,10);}
+function setQuickDate(key){const now=new Date(),today=toISO(now);let from='',to='';if(key==='today'){from=today;to=today;}else if(key==='yesterday'){const y=new Date(now);y.setDate(y.getDate()-1);from=toISO(y);to=toISO(y);}else if(key==='7d'){const s=new Date(now);s.setDate(s.getDate()-6);from=toISO(s);to=today;}else if(key==='30d'){const s=new Date(now);s.setDate(s.getDate()-29);from=toISO(s);to=today;}else if(key==='thismonth'){from=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-01';to=today;}else if(key==='lastmonth'){const lm=new Date(now.getFullYear(),now.getMonth(),0),fm=new Date(now.getFullYear(),now.getMonth()-1,1);from=toISO(fm);to=toISO(lm);}gel('log-date-from').value=from;gel('log-date-to').value=to;_dateFrom=from;_dateTo=to;updateQuickBtnState(key);updateDateStyle();updateBadge();runFilter();}
+function onDateInputChange(){_dateFrom=gel('log-date-from').value||'';_dateTo=gel('log-date-to').value||'';updateQuickBtnState('custom');updateDateStyle();}
+function applyDateFilter(){_dateFrom=gel('log-date-from').value||'';_dateTo=gel('log-date-to').value||'';updateBadge();runFilter();}
+function clearDateFilter(){_dateFrom='';_dateTo='';gel('log-date-from').value='';gel('log-date-to').value='';updateQuickBtnState('all');updateDateStyle();gel('date-active-badge').style.display='none';gel('date-summary-bar').classList.add('hidden');const rl=gel('log-date-range-label');if(rl)rl.textContent='';runFilter();}
+function updateQuickBtnState(key){['today','yesterday','7d','30d','thismonth','lastmonth','all'].forEach(k=>{const el=gel('qbtn-'+k);if(el)el.classList.toggle('active-quick',k===key);});}
+function updateDateStyle(){const f=gel('log-date-from'),t=gel('log-date-to');if(f)f.classList.toggle('has-value',!!f.value);if(t)t.classList.toggle('has-value',!!t.value);}
+function updateBadge(){const badge=gel('date-active-badge'),bar=gel('date-summary-bar'),txt=gel('date-summary-text'),cnt=gel('date-result-count'),rl=gel('log-date-range-label');if(!_dateFrom&&!_dateTo){badge.style.display='none';bar.classList.add('hidden');if(rl)rl.textContent='';return;}badge.style.display='';bar.classList.remove('hidden');let label=_dateFrom&&_dateTo&&_dateFrom===_dateTo?'วันที่ '+fmtDisp(_dateFrom):_dateFrom&&_dateTo?'ตั้งแต่ '+fmtDisp(_dateFrom)+' ถึง '+fmtDisp(_dateTo):_dateFrom?'ตั้งแต่ '+fmtDisp(_dateFrom):'ถึง '+fmtDisp(_dateTo);if(txt)txt.innerHTML='<strong>ช่วงวันที่:</strong> '+label;if(rl)rl.textContent=label;const n=allLogs.filter(r=>{const d=r.isoDate||'';if(_dateFrom&&d<_dateFrom)return false;if(_dateTo&&d>_dateTo)return false;return true;}).length;if(cnt)cnt.textContent=n+' รายการ';}
+function fmtDisp(iso){if(!iso)return '';const p=iso.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+(parseInt(p[0])+543):iso;}
+function getFilteredLogs(){const txt=(gel('log-search')||{value:''}).value.trim().toLowerCase();const entr=(gel('log-filter-entrance')||{value:''}).value.trim();const statFilter=normalizeStatus((gel('log-filter-status')||{value:''}).value);return allLogs.filter(r=>{if(_dateFrom||_dateTo){const d=r.isoDate||'';if(_dateFrom&&d<_dateFrom)return false;if(_dateTo&&d>_dateTo)return false;}if(statFilter&&r.status!==statFilter)return false;if(entr&&r.entrance!==entr)return false;if(txt){const hay=[r.empId,r.badgeId,r.nameEn,r.nameTh,r.dept,r.site,r.entrance,r.guardEmail,r.title].map(x=>(x||'').toLowerCase()).join('\u0000');if(!hay.includes(txt))return false;}return true;});}
+function runFilter(){const data=getFilteredLogs();const tbody=gel('log-tbody'),countEl=gel('log-count');if(countEl)countEl.textContent=data.length;if(!tbody)return;if(!data.length){tbody.innerHTML='<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--muted);">ยังไม่มีข้อมูล</td></tr>';return;}tbody.innerHTML=data.slice(0,300).map(r=>{const pill=r.status==='allowed'?'<span class="pill pill-green">✓ OK</span>':'<span class="pill pill-red">✗ DENY</span>';const sp=r.site==='PRB'?'pill-blue':r.site==='BPI'?'pill-teal':'pill-dim';return'<tr><td><input type="checkbox" class="log-chk"></td><td style="font-size:11px;white-space:nowrap;">'+(r.datetimeDisplay||'')+'</td><td><span class="pill pill-blue">'+(r.entrance||'-')+'</span></td><td>'+pill+'</td><td style="font-family:monospace;font-size:11px;">'+(r.empId||'-')+'</td><td style="font-family:monospace;font-size:11px;">'+(r.badgeId||'-')+'</td><td style="font-size:12px;">'+(r.nameEn||'-')+'</td><td style="font-size:11px;">'+(r.nameTh||'-')+'</td><td><span class="pill '+sp+'">'+(r.site||'-')+'</span></td><td style="font-size:11px;">'+(r.dept||'-')+'</td><td style="font-size:11px;">'+(r.title||'-')+'</td><td style="font-size:11px;">'+(r.guardEmail||'-')+'</td></tr>';}).join('');}
+function populateLogEntranceFilter(){const sel=gel('log-filter-entrance');if(!sel)return;const prev=sel.value;sel.innerHTML='<option value="">ทั้งหมด</option>';allEntrances.forEach(g=>{const o=document.createElement('option');o.value=g.name;o.textContent=g.name;sel.appendChild(o);});sel.value=prev;}
+function resetLogFilters(){['log-search','log-filter-entrance','log-filter-status'].forEach(id=>{const el=gel(id);if(el)el.value='';});runFilter();}
+function toggleAllLogs(cb){document.querySelectorAll('.log-chk').forEach(c=>c.checked=cb.checked);}
+async function clearAllLogs(){if(!confirm('ล้างประวัติทั้งหมด?'))return;if(!isDemoMode){const snap=await db.collection('accessLogs').get();const b=db.batch();snap.docs.forEach(d=>b.delete(d.ref));await b.commit();}else{allLogs=[];runFilter();renderDashLogs();updateDashStats();}}
+function exportLogCSV(){const data=getFilteredLogs();downloadCSV([['DateTime','Entrance','Status','EmpID','BadgeID','NameEN','NameTH','Site','Department','Title','Guard'],...data.map(r=>[r.datetimeDisplay,r.entrance,r.status,r.empId,r.badgeId,r.nameEn,r.nameTh,r.site,r.dept,r.title,r.guardEmail])],'access_logs_'+(_dateFrom||'all')+'_'+Date.now()+'.csv');}
+
+/* ══ PDF ══ */
+function buildPdfHtml(data){const now=new Date();const printDate=fmtTH(now);const rangeLabel=_dateFrom||_dateTo?(_dateFrom&&_dateTo?fmtDisp(_dateFrom)+' — '+fmtDisp(_dateTo):_dateFrom?'ตั้งแต่ '+fmtDisp(_dateFrom):'ถึง '+fmtDisp(_dateTo)):'ข้อมูลทั้งหมด';const statFilter=normalizeStatus((gel('log-filter-status')||{value:''}).value);const statusLabel=statFilter==='allowed'?'Granted เท่านั้น':statFilter==='denied'?'Denied เท่านั้น':'ทุกสถานะ';const okCount=data.filter(r=>r.status==='allowed').length;const denyCount=data.filter(r=>r.status==='denied').length;const rows=data.map((r,i)=>'<tr style="background:'+(i%2===0?'#f8fafc':'#fff')+';"><td style="text-align:center;color:#64748b;">'+(i+1)+'</td><td style="white-space:nowrap;font-size:8.5pt;">'+(r.datetimeDisplay||'')+'</td><td>'+(r.entrance||'-')+'</td><td style="text-align:center;"><span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:8pt;font-weight:700;background:'+(r.status==='allowed'?'#dcfce7':'#fee2e2')+';color:'+(r.status==='allowed'?'#16a34a':'#dc2626')+';">'+(r.status==='allowed'?'✓ OK':'✗ DENY')+'</span></td><td style="font-family:monospace;font-size:8.5pt;">'+(r.empId||'-')+'</td><td style="font-family:monospace;font-size:8.5pt;">'+(r.badgeId||'-')+'</td><td>'+(r.nameEn||'-')+'</td><td>'+(r.nameTh||'-')+'</td><td style="text-align:center;">'+(r.site||'-')+'</td><td style="font-size:8.5pt;">'+(r.dept||'-')+'</td><td style="font-size:8.5pt;color:#64748b;">'+(r.guardEmail||'-')+'</td></tr>').join('');return'<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><style>*{box-sizing:border-box;margin:0;padding:0;}@page{size:A4 landscape;margin:12mm 10mm;}body{font-family:\'Sarabun\',sans-serif;background:#fff;color:#1e293b;font-size:10pt;}.rpt-header{display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:10px;border-bottom:3px solid #003087;margin-bottom:10px;}.rpt-logo{width:44px;height:44px;background:linear-gradient(135deg,#003087,#2266FF,#00E5D1);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;flex-shrink:0;margin-right:12px;}.rpt-logo-wrap{display:flex;align-items:center;}.rpt-title{font-size:16pt;font-weight:800;color:#003087;line-height:1.2;}.rpt-org{font-size:8.5pt;color:#475569;}.rpt-meta{text-align:right;font-size:8.5pt;color:#64748b;line-height:1.8;}.rpt-summary{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;}.chip{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;font-size:8.5pt;font-weight:700;border:1px solid #e2e8f0;background:#f8fafc;}.chip-total{border-color:#2266FF;background:#eff6ff;color:#2266FF;}.chip-ok{border-color:#16a34a;background:#f0fdf4;color:#16a34a;}.chip-deny{border-color:#dc2626;background:#fef2f2;color:#dc2626;}.chip-range{border-color:#7c3aed;background:#f5f3ff;color:#7c3aed;}table{width:100%;border-collapse:collapse;font-size:9pt;}thead tr{background:#003087;}thead th{color:#fff;padding:6px 7px;text-align:left;font-size:8pt;font-weight:700;white-space:nowrap;}tbody tr td{padding:5px 7px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}.rpt-footer{margin-top:10px;display:flex;justify-content:space-between;font-size:8pt;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:6px;}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}</style><link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet"></head><body><div class="rpt-header"><div class="rpt-logo-wrap"><div class="rpt-logo">🛡️</div><div><div class="rpt-title">รายงานประวัติการเข้าพื้นที่</div><div class="rpt-org">Building Access Control · Admin Portal | Western Digital</div></div></div><div class="rpt-meta"><div><strong>พิมพ์:</strong> '+printDate+'</div><div><strong>ช่วง:</strong> '+rangeLabel+'</div></div></div><div class="rpt-summary"><span class="chip chip-total">📋 '+data.length+'</span><span class="chip chip-ok">✓ '+okCount+'</span><span class="chip chip-deny">✗ '+denyCount+'</span><span class="chip chip-range">'+rangeLabel+'</span><span class="chip">'+statusLabel+'</span></div><table><thead><tr><th>#</th><th>วันเวลา</th><th>จุดทางเข้า</th><th>สถานะ</th><th>Emp ID</th><th>Badge ID</th><th>Name EN</th><th>ชื่อ TH</th><th>Site</th><th>Dept</th><th>Guard</th></tr></thead><tbody>'+(rows||'<tr><td colspan="11" style="text-align:center;padding:20px;color:#94a3b8;">ไม่มีข้อมูล</td></tr>')+'</tbody></table><div class="rpt-footer"><span>Building Access Control · SaksriK.</span><span>'+printDate+' · '+data.length+' รายการ</span></div></body></html>';}
+function openPdfPreview(){const data=getFilteredLogs();const html=buildPdfHtml(data);const frame=gel('pdf-preview-frame');frame.innerHTML='';const iframe=document.createElement('iframe');iframe.id='pdf-iframe';iframe.style.cssText='width:100%;height:620px;border:none;display:block;';frame.appendChild(iframe);const doc=iframe.contentDocument||iframe.contentWindow.document;doc.open();doc.write(html);doc.close();const rl=gel('pdf-modal-range');if(rl)rl.textContent='('+data.length+' รายการ)';gel('pdf-modal').classList.remove('hidden');document.body.style.overflow='hidden';}
+function closePdfModal(){gel('pdf-modal').classList.add('hidden');document.body.style.overflow='';}
+function doPrint(){const iframe=document.getElementById('pdf-iframe');if(iframe&&iframe.contentWindow){iframe.contentWindow.focus();iframe.contentWindow.print();}}
+
+/* ══ HELP ══ */
+function toggleFaq(el){const a=el.nextElementSibling;a.classList.toggle('open');el.querySelector('span:last-child').textContent=a.classList.contains('open')?'▴':'▾';}
+
+/* ══ IW ══ */
+async function openImportWorkerModal(){iwParsedData=[];iwIsImporting=false;gel('iw-preview-section').style.display='none';gel('iw-file-input').value='';gel('iw-prog-wrap').classList.remove('show');gel('iw-result').className='iw-result';gel('iw-batch-log').innerHTML='';gel('iw-import-btn').disabled=true;gel('iw-import-btn-text').textContent='เริ่ม Import ลงระบบ';gel('iw-prog-bar').style.width='0%';iwSetMode('all');if(db&&!isDemoMode){try{const snap=await db.collection('employees').get();iwExistingIds=new Set(snap.docs.map(d=>d.id));const cnt=iwExistingIds.size;gel('iw-existing-count').textContent=cnt.toLocaleString();cnt>0?gel('iw-resume').classList.add('show'):gel('iw-resume').classList.remove('show');}catch(e){iwExistingIds=new Set();gel('iw-resume').classList.remove('show');}}else{iwExistingIds=new Set(allEmployees.map(e=>e.empId));const cnt=iwExistingIds.size;gel('iw-existing-count').textContent=cnt;cnt>0?gel('iw-resume').classList.add('show'):gel('iw-resume').classList.remove('show');}gel('import-worker-modal').classList.remove('hidden');document.body.style.overflow='hidden';}
+function closeImportWorkerModal(){if(iwIsImporting&&!confirm('กำลัง Import อยู่ ต้องการยกเลิก?'))return;gel('import-worker-modal').classList.add('hidden');document.body.style.overflow='';iwIsImporting=false;}
+function iwSetMode(mode){iwImportMode=mode;gel('iw-mode-btn-all').className='iw-mode-btn '+(mode==='all'?'active-all':'inactive');gel('iw-mode-btn-skip').className='iw-mode-btn '+(mode==='skip'?'active-skip':'inactive');const info=gel('iw-mode-info');if(mode==='all'){info.className='iw-mode-info all';info.innerHTML='<strong>Import ทั้งหมด:</strong> เขียนทับด้วย merge — ไม่ duplicate';}else{info.className='iw-mode-info skip';info.innerHTML='<strong>Import เฉพาะใหม่ (Resume):</strong> ข้าม empId ที่มีอยู่แล้ว';}if(iwParsedData.length>0)iwUpdateValSummary();}
+const iwDz=gel('iw-drop-zone');if(iwDz){iwDz.addEventListener('dragover',e=>{e.preventDefault();iwDz.classList.add('drag');});iwDz.addEventListener('dragleave',()=>iwDz.classList.remove('drag'));iwDz.addEventListener('drop',e=>{e.preventDefault();iwDz.classList.remove('drag');const f=e.dataTransfer.files[0];if(f)iwProcessFile(f);});}
+function iwHandleFile(e){const f=e.target.files[0];if(f)iwProcessFile(f);}
+function iwProcessFile(file){const ext=file.name.split('.').pop().toLowerCase();if(!['xlsx','xls','csv'].includes(ext)){alert('รองรับเฉพาะ .xlsx .xls .csv');return;}const reader=new FileReader();reader.onload=ev=>{try{const wb=XLSX.read(ev.target.result,{type:'binary'});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{defval:''});if(!rows.length){alert('ไม่พบข้อมูลในไฟล์');return;}const sampleKeys=Object.keys(rows[0]);const mapResult=iwDetectColMap(sampleKeys);iwParsedData=rows.map(r=>iwMapRow(r,mapResult)).filter(Boolean);const skipped=rows.length-iwParsedData.length;gel('iw-file-info').innerHTML='<div class="iw-file-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg></div><div><div class="iw-file-name">'+file.name+'</div><div class="iw-file-meta">'+rows.length.toLocaleString()+' แถว · '+iwParsedData.length.toLocaleString()+' มี empId'+(skipped>0?' · '+skipped+' ข้าม':'')+'</div></div>';iwShowColMap(mapResult,sampleKeys);gel('iw-v-total').textContent=rows.length.toLocaleString();gel('iw-preview-count').textContent=Math.min(10,iwParsedData.length);iwUpdateValSummary();iwRenderPreview();gel('iw-preview-section').style.display='block';gel('iw-import-btn').disabled=iwParsedData.length===0;gel('iw-result').className='iw-result';}catch(err){alert('อ่านไฟล์ไม่ได้: '+err.message);}};reader.readAsBinaryString(file);}
+function iwDetectColMap(keys){function find(aliases){for(const a of aliases){const f=keys.find(k=>k.trim().toLowerCase()===a.trim().toLowerCase());if(f)return f;}return null;}return{empId:find(['Emp - ID','emp - id','EmpId','empId','Emp ID','emp id','emp_id','EmployeeID','Employee ID','EMPID','EMP ID','EMP-ID']),badgeId:find(['Badge-ID','badge-id','BadgeId','badgeId','Badge ID','badge id','badge_id','BADGEID','BADGE-ID']),nameEn:find(['Name and Surname (EN)','nameEn','NameEn','Name EN','name en','Name','NAME','Full Name','full name']),nameTh:find(['Name and Surname (TH)','nameTh','NameTh','Name TH','name th','ชื่อ','ชื่อ-นามสกุล','ชื่อนามสกุล']),site:find(['site','Site','SITE','สาขา','Location','location']),cloudSite:find(['cloudSite','CloudSite','Cloud Site','cloud site','cloud_site']),dept:find(['Department','department','dept','Dept','DEPARTMENT','แผนก','หน่วยงาน']),division:find(['Division','division','DIVISION','ฝ่าย']),title:find(['Title','title','TITLE','Job Title','job title','Position','position','ตำแหน่ง']),track:find(['Job Classification/Track','job classification/track','Track','track','TRACK','Job Classification','job classification'])};}
+function iwMapRow(r,map){const empId=map.empId?String(r[map.empId]||'').trim():'';if(!empId)return null;return{empId,badgeId:map.badgeId?String(r[map.badgeId]||'').trim():'',nameEn:map.nameEn?String(r[map.nameEn]||'').trim():'',nameTh:map.nameTh?String(r[map.nameTh]||'').trim():'',site:map.site?String(r[map.site]||'').trim():'',cloudSite:map.cloudSite?String(r[map.cloudSite]||'').trim():'',dept:map.dept?String(r[map.dept]||'').trim():'',division:map.division?String(r[map.division]||'').trim():'',title:map.title?String(r[map.title]||'').trim():'',track:map.track?String(r[map.track]||'').trim():''};}
+function iwShowColMap(map,allKeys){const mapped=Object.entries(map).filter(([,v])=>v);const missed=Object.entries(map).filter(([,v])=>!v).map(([k])=>k);gel('iw-col-map-result').innerHTML='✅ Column ที่ map ได้ ('+mapped.length+'/'+Object.keys(map).length+'):<br>'+mapped.map(([f,c])=>'<strong style="color:#93c5fd;">'+f+'</strong> ← <code style="background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px;">'+c+'</code>').join(' · ');const w=gel('iw-col-map-warn');if(missed.length>0){w.style.display='block';w.innerHTML='⚠️ ไม่พบ Column: <strong>'+missed.join(', ')+'</strong>';}else w.style.display='none';}
+function iwUpdateValSummary(){if(iwImportMode==='skip'){gel('iw-v-new').textContent=iwParsedData.filter(r=>!iwExistingIds.has(r.empId)).length.toLocaleString();gel('iw-v-upd').textContent='0';gel('iw-v-skip').textContent=iwParsedData.filter(r=>iwExistingIds.has(r.empId)).length.toLocaleString();}else{gel('iw-v-new').textContent=iwParsedData.filter(r=>!iwExistingIds.has(r.empId)).length.toLocaleString();gel('iw-v-upd').textContent=iwParsedData.filter(r=>iwExistingIds.has(r.empId)).length.toLocaleString();gel('iw-v-skip').textContent='0';}}
+function iwRenderPreview(){const tbody=gel('iw-preview-tbody');if(!iwParsedData.length){tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:16px;color:var(--red);">ไม่มีแถวที่มี empId</td></tr>';return;}tbody.innerHTML=iwParsedData.slice(0,10).map((r,i)=>{const isNew=!iwExistingIds.has(r.empId);const sp=r.site==='PRB'?'pill-blue':r.site==='BPI'?'pill-teal':r.site==='HO'?'pill-amber':'pill-dim';const statusPill=iwImportMode==='skip'&&!isNew?'<span class="pill pill-dim">SKIP</span>':(isNew?'<span class="pill pill-teal">NEW</span>':'<span class="pill pill-blue">UPD</span>');return'<tr><td style="color:var(--muted);">'+(i+1)+'</td><td style="font-family:monospace;font-weight:700;">'+r.empId+'</td><td style="font-family:monospace;">'+(r.badgeId||'-')+'</td><td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;">'+(r.nameEn||'-')+'</td><td>'+(r.nameTh||'-')+'</td><td><span class="pill '+sp+'">'+(r.site||'—')+'</span></td><td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;">'+(r.dept||'-')+'</td><td>'+(r.title||'-')+'</td><td>'+statusPill+'</td></tr>';}).join('');}
+function iwResetFile(){iwParsedData=[];gel('iw-file-input').value='';gel('iw-preview-section').style.display='none';gel('iw-prog-wrap').classList.remove('show');gel('iw-result').className='iw-result';gel('iw-batch-log').innerHTML='';gel('iw-import-btn').disabled=true;gel('iw-import-btn-text').textContent='เริ่ม Import ลงระบบ';gel('iw-prog-bar').style.width='0%';}
+async function iwStartImport(){if(!iwParsedData.length||iwIsImporting)return;if(!isDemoMode&&!db){alert('ไม่ได้เชื่อมต่อระบบ');return;}iwIsImporting=true;const toImport=iwImportMode==='skip'?iwParsedData.filter(r=>!iwExistingIds.has(r.empId)):iwParsedData;if(!toImport.length){gel('iw-result').className='iw-result ok';gel('iw-result').innerHTML='✅ ไม่มีรายการใหม่';iwIsImporting=false;return;}const btn=gel('iw-import-btn');btn.disabled=true;gel('iw-import-btn-text').innerHTML='<div class="iw-spin"></div> กำลัง Import...';gel('iw-prog-wrap').classList.add('show');gel('iw-batch-log').innerHTML='';gel('iw-prog-ok').textContent='0';gel('iw-prog-skipped').textContent=(iwParsedData.length-toImport.length).toLocaleString();gel('iw-prog-err').textContent='0';const total=toImport.length;const skippedCount=iwParsedData.length-toImport.length;const chunks=[];for(let i=0;i<toImport.length;i+=IW_BATCH)chunks.push(toImport.slice(i,i+IW_BATCH));let done=0,errors=0;iwUpdateProgress(0,total,'เริ่ม Import '+total.toLocaleString()+' รายการ');for(let ci=0;ci<chunks.length;ci++){const chunk=chunks[ci],start=done+1;try{if(!isDemoMode){const batch=db.batch();chunk.forEach(obj=>batch.set(db.collection('employees').doc(obj.empId),obj,{merge:true}));await batch.commit();}else{chunk.forEach(obj=>{const i=allEmployees.findIndex(e=>e.empId===obj.empId);i>=0?allEmployees[i]=obj:allEmployees.push(obj);});}done+=chunk.length;gel('iw-prog-ok').textContent=done.toLocaleString();iwAddBatchLog('ok','ชุด '+(ci+1)+'/'+chunks.length+' · '+start+'–'+done+' ✓');iwUpdateProgress(done,total,'ชุด '+(ci+1)+'/'+chunks.length);}catch(e){errors++;gel('iw-prog-err').textContent=errors;iwAddBatchLog('err','ชุด '+(ci+1)+' ERROR: '+(e.message||e.code));done+=chunk.length;iwUpdateProgress(done,total,'ชุด '+(ci+1)+' error');}await new Promise(r=>setTimeout(r,IW_DELAY));}iwIsImporting=false;btn.disabled=false;gel('iw-import-btn-text').textContent='เริ่ม Import ลงระบบ';if(!isDemoMode){try{const snap=await db.collection('employees').get();iwExistingIds=new Set(snap.docs.map(d=>d.id));gel('iw-existing-count').textContent=iwExistingIds.size.toLocaleString();}catch(e){}}else{iwExistingIds=new Set(allEmployees.map(e=>e.empId));gel('iw-existing-count').textContent=iwExistingIds.size;renderEmployeesTable();updateDashStats();updateEmpMini();}if(errors===0){gel('iw-prog-label').textContent='✅ Import สำเร็จ!';iwUpdateProgress(total,total,'✅ '+done+' รายการ'+(skippedCount>0?' · ข้าม '+skippedCount:''));gel('iw-result').className='iw-result ok';gel('iw-result').innerHTML='✅ Import สำเร็จ '+done.toLocaleString()+' รายการ · '+chunks.length+' ชุด'+(skippedCount>0?' · ข้าม '+skippedCount.toLocaleString():'');}else{gel('iw-result').className='iw-result err';gel('iw-result').innerHTML='⚠️ เสร็จสิ้น — '+errors+' ชุดเกิด error';}}
+function iwUpdateProgress(done,total,detail){const pct=total>0?Math.round((done/total)*100):0;gel('iw-prog-bar').style.width=pct+'%';gel('iw-prog-pct').textContent=pct+'%';gel('iw-prog-detail').textContent=detail+' ('+done.toLocaleString()+'/'+total.toLocaleString()+')';}
+function iwAddBatchLog(type,msg){const log=gel('iw-batch-log'),line=document.createElement('div');line.className='iw-batch-line '+type;line.innerHTML=(type==='ok'?'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>':'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>')+msg;log.appendChild(line);log.scrollTop=log.scrollHeight;}
+
+function setMsg(id,type,msg){const el=gel(id);if(!el)return;el.textContent=msg;el.className='status-msg '+type;setTimeout(()=>{el.className='status-msg';},5000);}
+function downloadCSV(rows,filename){const csv=rows.map(r=>r.map(c=>'"'+(c||'').toString().replace(/"/g,'""')+'"').join(',')).join('\n');const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download=filename;a.click();}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!gel('import-worker-modal').classList.contains('hidden')){closeImportWorkerModal();return;}if(!gel('pdf-modal').classList.contains('hidden')){closePdfModal();return;}if(!gel('guard-modal').classList.contains('hidden')){closeGuardModal();return;}if(!gel('admin-modal').classList.contains('hidden')){closeAdminModal();return;}if(!gel('logout-confirm').classList.contains('hidden'))closeLogoutConfirm();}if(e.ctrlKey&&e.shiftKey&&e.key==='C')resetConfig();});
+gel('logout-confirm').addEventListener('click',function(e){if(e.target===this)closeLogoutConfirm();});
+gel('pdf-modal').addEventListener('click',function(e){if(e.target===this)closePdfModal();});
+gel('import-worker-modal').addEventListener('click',function(e){if(e.target===this)closeImportWorkerModal();});
+</script>
+</body>
+</html>
